@@ -24,6 +24,7 @@ namespace {
 
 struct Handle {
     explicit Handle(const std::string& path) : clip(path) {}
+    Handle(int fd, const std::string& name) : clip(fd, name) {}
     craw::tools::Clip clip;
     std::mutex mutex;  // develop scratch is per handle; one render at a time
     std::vector<uint16_t> rgb;
@@ -55,6 +56,18 @@ JNIEXPORT jlong JNICALL
 Java_com_matthew_crs_CrawClip_nativeOpen(JNIEnv* env, jclass, jstring path) {
     try {
         return reinterpret_cast<jlong>(new Handle(jstr(env, path)));
+    } catch (const std::exception& e) {
+        __android_log_print(ANDROID_LOG_WARN, "CrawClip", "open failed: %s", e.what());
+        return 0;
+    }
+}
+
+// Opens from a content-provider descriptor (memory-mapped; the caller may
+// close `fd` afterwards). SAF files cannot be reopened by path.
+JNIEXPORT jlong JNICALL
+Java_com_matthew_crs_CrawClip_nativeOpenFd(JNIEnv* env, jclass, jint fd, jstring name) {
+    try {
+        return reinterpret_cast<jlong>(new Handle(fd, jstr(env, name)));
     } catch (const std::exception& e) {
         __android_log_print(ANDROID_LOG_WARN, "CrawClip", "open failed: %s", e.what());
         return 0;

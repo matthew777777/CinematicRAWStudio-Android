@@ -37,8 +37,26 @@ class PlayerEngine(private val clip: CrawClip) {
     private var noAudioStartMs = 0L
     private var startSeconds = 0.0
 
-    private fun clockSeconds(): Double = audio?.positionSeconds
-        ?: (startSeconds + (SystemClock.elapsedRealtime() - noAudioStartMs) / 1000.0)
+    private var lastAudio = -1.0
+    private var lastAudioChangeMs = 0L
+
+    /**
+     * Playback clock: the audio position while audio advances. Audio can end
+     * before the last frame (and has not started for the first few ms); when
+     * it stalls for > 150 ms the clock continues on wall time from there.
+     */
+    private fun clockSeconds(): Double {
+        val now = SystemClock.elapsedRealtime()
+        val a = audio?.positionSeconds
+            ?: return startSeconds + (now - noAudioStartMs) / 1000.0
+        if (a != lastAudio) {
+            lastAudio = a
+            lastAudioChangeMs = now
+            return a
+        }
+        val stalled = now - lastAudioChangeMs
+        return if (stalled > 150) a + (stalled - 150) / 1000.0 else a
+    }
 
     @Synchronized
     fun show(i: Int) {
@@ -60,6 +78,8 @@ class PlayerEngine(private val clip: CrawClip) {
         playing = true
         startSeconds = index / info.fps
         noAudioStartMs = SystemClock.elapsedRealtime()
+        lastAudio = -1.0
+        lastAudioChangeMs = noAudioStartMs
         audio?.play(startSeconds)
         running = true
         thread = Thread({

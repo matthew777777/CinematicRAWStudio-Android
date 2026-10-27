@@ -4,7 +4,6 @@ package com.matthew.crs
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
-import android.os.ParcelFileDescriptor
 import org.json.JSONObject
 import java.io.Closeable
 
@@ -21,10 +20,10 @@ data class ClipInfo(
 
 /**
  * One open .CRAW take. Opened from a content Uri through its file
- * descriptor (`/proc/self/fd/N`), so the native reader memory-maps the file
- * in place, without copying it out of shared storage.
+ * descriptor, which the native reader memory-maps in place (no copy out of
+ * shared storage); the descriptor is closed right after.
  */
-class CrawClip private constructor(private var handle: Long, private val pfd: ParcelFileDescriptor) : Closeable {
+class CrawClip private constructor(private var handle: Long) : Closeable {
     val info: ClipInfo = parseInfo(nativeInfo(handle) ?: error("CRAW info unavailable"))
 
     /** Size of [render]'s output: half the coded frame size. */
@@ -50,7 +49,6 @@ class CrawClip private constructor(private var handle: Long, private val pfd: Pa
         if (handle != 0L) {
             nativeClose(handle)
             handle = 0
-            pfd.close()
         }
     }
 
@@ -65,9 +63,9 @@ class CrawClip private constructor(private var handle: Long, private val pfd: Pa
                 android.util.Log.w("CrawClip", "cannot open $uri: $e")
                 null
             } ?: return null
-            val h = nativeOpen("/proc/self/fd/${pfd.fd}")
-            if (h == 0L) { pfd.close(); return null }
-            return try { CrawClip(h, pfd) } catch (e: Exception) { nativeClose(h); pfd.close(); null }
+            val h = pfd.use { nativeOpenFd(it.fd, uri.lastPathSegment ?: "take") }
+            if (h == 0L) return null
+            return try { CrawClip(h) } catch (e: Exception) { nativeClose(h); null }
         }
 
         private fun parseInfo(json: String): ClipInfo = JSONObject(json).run {
@@ -80,6 +78,7 @@ class CrawClip private constructor(private var handle: Long, private val pfd: Pa
         }
 
         @JvmStatic private external fun nativeOpen(path: String): Long
+        @JvmStatic private external fun nativeOpenFd(fd: Int, name: String): Long
         @JvmStatic private external fun nativeClose(handle: Long)
         @JvmStatic private external fun nativeInfo(handle: Long): String?
         @JvmStatic private external fun nativePreviewSize(handle: Long): IntArray?
