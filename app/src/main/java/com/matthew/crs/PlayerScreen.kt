@@ -43,9 +43,14 @@ fun PlayerScreen(uri: Uri, onBack: () -> Unit) {
         if (c == null) failed = true else clip = c
     }
     val engine = remember(clip) { clip?.let { PlayerEngine(it) } }
+    // Release exactly what this effect saw: reading the state inside onDispose
+    // would close the clip that just replaced it.
     DisposableEffect(engine) {
-        onDispose { engine?.release(); clip?.close() }
+        val e = engine
+        val c = clip
+        onDispose { e?.release(); if (e != null) c?.close() }
     }
+    DisposableEffect(Unit) { onDispose { clip?.close() } }
     LaunchedEffect(engine) { engine?.let { withContext(Dispatchers.IO) { it.show(0) } } }
 
     Scaffold(

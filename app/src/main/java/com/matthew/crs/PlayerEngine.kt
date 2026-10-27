@@ -44,7 +44,10 @@ class PlayerEngine(private val clip: CrawClip) {
     fun show(i: Int) {
         val target = i.coerceIn(0, maxOf(info.frames - 1, 0))
         val bmp = bitmaps[back]
-        if (clip.render(target, bmp, exposureEv)) {
+        val t0 = SystemClock.elapsedRealtime()
+        val ok = clip.render(target, bmp, exposureEv)
+        if (!playing) android.util.Log.i("PlayerEngine", "render $target ok=$ok ${SystemClock.elapsedRealtime() - t0} ms")
+        if (ok) {
             back = 1 - back
             frame = bmp
             index = target
@@ -74,6 +77,7 @@ class PlayerEngine(private val clip: CrawClip) {
                 val now = SystemClock.elapsedRealtime()
                 if (now - windowStart >= 1000) {
                     shownFps = shown * 1000.0 / (now - windowStart)
+                    android.util.Log.i("PlayerEngine", "preview %.1f fps, frame %d, clock %.2f s".format(shownFps, index, clockSeconds()))
                     shown = 0
                     windowStart = now
                 }

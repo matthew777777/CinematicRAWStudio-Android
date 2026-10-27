@@ -34,8 +34,12 @@ class CrawClip private constructor(private var handle: Long, private val pfd: Pa
         Bitmap.createBitmap(previewSize.first, previewSize.second, Bitmap.Config.ARGB_8888)
 
     /** Develops frame [index] (Rec.709, half resolution) into [bitmap]; false on failure. */
-    fun render(index: Int, bitmap: Bitmap, exposureEv: Float = 0f): Boolean =
-        handle != 0L && nativeRender(handle, index, bitmap, exposureEv) == 0
+    fun render(index: Int, bitmap: Bitmap, exposureEv: Float = 0f): Boolean {
+        if (handle == 0L) return false
+        val code = nativeRender(handle, index, bitmap, exposureEv)
+        if (code != 0) android.util.Log.w("CrawClip", "render $index failed: code $code")
+        return code == 0
+    }
 
     /** Reads take WAV bytes at [offset] into [dst]; returns the count (<= 0 at the end). */
     fun readWav(offset: Long, dst: ByteArray, length: Int = dst.size): Int =
@@ -54,7 +58,13 @@ class CrawClip private constructor(private var handle: Long, private val pfd: Pa
         init { System.loadLibrary("crs") }
 
         fun open(context: Context, uri: Uri): CrawClip? {
-            val pfd = context.contentResolver.openFileDescriptor(uri, "r") ?: return null
+            // Unreadable or vanished files show "cannot open" instead of crashing.
+            val pfd = try {
+                context.contentResolver.openFileDescriptor(uri, "r")
+            } catch (e: Exception) {
+                android.util.Log.w("CrawClip", "cannot open $uri: $e")
+                null
+            } ?: return null
             val h = nativeOpen("/proc/self/fd/${pfd.fd}")
             if (h == 0L) { pfd.close(); return null }
             return try { CrawClip(h, pfd) } catch (e: Exception) { nativeClose(h); pfd.close(); null }
