@@ -95,7 +95,7 @@ class MainActivity : ComponentActivity() {
                         Scaffold(bottomBar = { BottomBar(tab) { tab = it } }) { pad ->
                             Box(Modifier.padding(bottom = pad.calculateBottomPadding()).consumeWindowInsets(pad).fillMaxSize()) {
                                 when (tab) {
-                                    Tab.Library -> GalleryScreen(onOpen = { open = it.toString() })
+                                    Tab.Library -> GalleryScreen(onOpen = { open = it.toString() }, onOpenProject = { projectId = it })
                                     Tab.Projects -> com.matthew.crs.project.ProjectsScreen(onOpen = { projectId = it })
                                     Tab.Exports -> com.matthew.crs.project.ExportsScreen()
                                 }

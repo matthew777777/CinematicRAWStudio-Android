@@ -12,11 +12,13 @@
 #include <android/log.h>
 
 #include "common/Clip.h"
+#include "craw/Decoder.h"
 #include "Develop.h"
 #include "raw_tools.h"
 #include "p010_output.h"
 
 #include <algorithm>
+#include <array>
 #include <cerrno>
 #include <cstring>
 #include <sys/mman.h>
@@ -219,23 +221,35 @@ Java_com_matthew_crs_CrawClip_nativeInfo(JNIEnv* env, jclass, jlong h) {
     const auto [w, hh] = c.imageSize();
     const auto& a = c.audio();
     double iso = 0, exposure = 0;
+    std::array<double, 3> neutral{0, 0, 0};
+    int codec = 0, bitDepth = 0;
     if (c.frameCount() > 0) {
         try {
             const auto raw = c.frameRaw(0, 1);
             iso = raw.iso;
             exposure = raw.exposureSeconds;
+            neutral = raw.neutral;
+        } catch (...) {
+        }
+        try {
+            const auto rec = c.reader().frame(0);
+            const auto fi = craw::probeFrame(rec.payload, rec.payloadSize);
+            codec = fi.codec;
+            bitDepth = fi.bitDepth;
         } catch (...) {
         }
     }
-    char buf[640];
+    char buf[1024];
     std::snprintf(buf, sizeof buf,
                   "{\"width\":%u,\"height\":%u,\"frames\":%zu,\"fps\":%.6f,\"rgb\":%s,\"camera\":\"%s\","
                   "\"iso\":%.0f,\"exposure\":%.9f,\"audioRate\":%u,\"audioChannels\":%d,\"audioBits\":%d,"
-                  "\"wavSize\":%llu,\"recovered\":%s}",
+                  "\"wavSize\":%llu,\"recovered\":%s,\"codec\":%d,\"bitDepth\":%d,\"make\":\"%s\",\"model\":\"%s\","
+                  "\"neutral\":[%.9f,%.9f,%.9f]}",
                   w, hh, c.frameCount(), c.info().fpsNum / c.info().fpsDen, c.isRgb() ? "true" : "false",
                   escape(c.info().uniqueModel).c_str(), iso, exposure, a.sampleRate, a.channels,
                   a.format == 1 ? 16 : a.format ? 24 : 0, static_cast<unsigned long long>(a.format ? c.wavSize() : 0),
-                  c.reader().recovered() ? "true" : "false");
+                  c.reader().recovered() ? "true" : "false", codec, bitDepth, escape(c.info().make).c_str(),
+                  escape(c.info().model).c_str(), neutral[0], neutral[1], neutral[2]);
     return env->NewStringUTF(buf);
 }
 

@@ -251,11 +251,7 @@ fun PlayerScreen(uri: Uri, onBack: () -> Unit) {
         val receipt = e.receipt
         com.matthew.crs.project.ExportPanel(prepare = {
             e.pause()
-            val asset = com.matthew.crs.project.ProjectMedia.importRaw(context, uri)
-            val rate = com.matthew.crs.project.FrameRate.fromFps(asset.fps)
-            val project = com.matthew.crs.project.SequenceProject(name = asset.name.removeSuffix(".craw"), rate = rate,
-                width = asset.width and 1.inv(), height = asset.height and 1.inv()).append(asset)
-            project.copy(clips = project.clips.map { c -> if (project.track(c.trackId).kind == com.matthew.crs.project.TrackKind.VIDEO) c.copy(receipt = receipt) else c }).validated()
+            singleTakeProject(context, uri, receipt)
         }, beforeStart = { withContext(Dispatchers.IO) { e.pause() } }, onDismiss = { export = false })
     }
     if (reset) AlertDialog(onDismissRequest = { reset = false }, title = { Text("Reset all adjustments?") },
