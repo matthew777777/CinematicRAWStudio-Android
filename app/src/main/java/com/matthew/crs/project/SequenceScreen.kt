@@ -142,6 +142,17 @@ private fun SequenceEditor(s: ProjectSession, onBack: () -> Unit) {
             val availableWidth = maxWidth
             var timelineDp by remember(landscape) { mutableFloatStateOf(if (landscape) 112f else 190f) }
             val density = LocalDensity.current
+            // Landscape tracks may take 65 % of the height; portrait keeps 40 % so
+            // the preview (and the inspector, when open) stay usable.
+            val maxTimeline = availableHeight * (if (landscape) 0.65f else 0.4f)
+            @Composable fun Timeline() {
+                Box(Modifier.fillMaxWidth().height(12.dp).background(MaterialTheme.colorScheme.outlineVariant).pointerInput(landscape, availableHeight) {
+                    detectVerticalDragGestures { change, delta ->
+                        change.consume(); timelineDp = (timelineDp - delta / density.density).coerceIn(92f, maxOf(92f, maxTimeline.value))
+                    }
+                }, contentAlignment = Alignment.Center) { Box(Modifier.width(40.dp).height(3.dp).background(MaterialTheme.colorScheme.onSurfaceVariant)) }
+                SequenceTimeline(s, Modifier.fillMaxWidth().height(minOf(timelineDp.dp, maxTimeline)))
+            }
             @Composable fun Monitor(modifier: Modifier) {
                 Column(modifier) {
                     Box(Modifier.weight(1f).fillMaxWidth().background(Color(0xFF070809)), contentAlignment = Alignment.Center) {
@@ -184,12 +195,7 @@ private fun SequenceEditor(s: ProjectSession, onBack: () -> Unit) {
                         IconButton(onClick = { selected?.let { c -> s.edit { it.split(c.id, p.rate.time(s.player.index)) } } }, enabled = selected != null && !ExportQueue.running,
                             modifier = Modifier.size(32.dp)) { Icon(Icons.Default.ContentCut, "Split at playhead", Modifier.size(18.dp)) }
                     }
-                    Box(Modifier.fillMaxWidth().height(8.dp).background(MaterialTheme.colorScheme.outlineVariant).pointerInput(landscape, availableHeight) {
-                        detectVerticalDragGestures { change, delta ->
-                            change.consume(); timelineDp = (timelineDp - delta / density.density).coerceIn(92f, availableHeight.value * 0.65f)
-                        }
-                    }, contentAlignment = Alignment.Center) { Box(Modifier.width(32.dp).height(2.dp).background(MaterialTheme.colorScheme.onSurfaceVariant)) }
-                    SequenceTimeline(s, Modifier.fillMaxWidth().height(timelineDp.dp.coerceAtMost(availableHeight * 0.65f)))
+                    if (landscape) Timeline()
                 }
             }
             val showInspector = inspect && selected != null
@@ -200,8 +206,14 @@ private fun SequenceEditor(s: ProjectSession, onBack: () -> Unit) {
                     ClipInspector(s, { relink = it; relinkPicker.launch(arrayOf("*/*")) }, Modifier.width((availableWidth * 0.3f).coerceIn(240.dp, 300.dp)).fillMaxHeight())
                 }
             } else Column(Modifier.fillMaxSize()) {
-                Monitor(Modifier.fillMaxWidth().weight(1.2f))
-                if (showInspector) { HorizontalDivider(); ClipInspector(s, { relink = it; relinkPicker.launch(arrayOf("*/*")) }, Modifier.fillMaxWidth().weight(1f)) }
+                // Portrait: preview takes what is left; timeline and inspector have
+                // bounded heights so neither squeezes the other or the picture away.
+                Monitor(Modifier.fillMaxWidth().weight(1f).heightIn(min = 160.dp))
+                Timeline()
+                if (showInspector) {
+                    HorizontalDivider()
+                    ClipInspector(s, { relink = it; relinkPicker.launch(arrayOf("*/*")) }, Modifier.fillMaxWidth().height(availableHeight * 0.3f))
+                }
             }
         }
     }

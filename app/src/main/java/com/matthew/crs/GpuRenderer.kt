@@ -184,6 +184,9 @@ class GpuFrameRenderer(private val clip: CrawClip, width: Int, height: Int) : Au
     }
 
     private var rgbF16: HardwareBuffer? = null
+    // Which frame and raw-tool settings rgbF16 holds (-1: none).
+    private var rcdIndex = -1
+    private var rcdTools: List<Int>? = null
     private val graded = arrayOfNulls<Bitmap>(2)
     private var gradedNext = 0
 
@@ -229,6 +232,13 @@ class GpuFrameRenderer(private val clip: CrawClip, width: Int, height: Int) : Au
         if (!GpuPipeline.ensureRcdMode(fused = false)) return null
         val t0 = System.nanoTime()
         val tools = receipt().rawToolValues().toList()
+        // Grading edits on a paused frame: the RCD output is still in rgbF16.
+        val cached = rgbF16
+        if (cached != null && rcdIndex == index && rcdTools == tools && readAhead == 0) {
+            grade.apply(receipt())
+            return use(cached)
+        }
+        rcdIndex = -1
         val slot = takeReadAhead(index, tools) ?: decode(index, false) ?: return null
         for (next in index + 1..index + readAhead) startReadAhead(next, tools)
         try {
@@ -243,6 +253,7 @@ class GpuFrameRenderer(private val clip: CrawClip, width: Int, height: Int) : Au
             val (ip, fp) = VfRcd.packRcd(w, h, 0, 0, VfRcd.channelsFromPattern(pattern), f.width, 0, f.black, f.white)
             val rc = VfPackedRcd.processNative(slot.blob, buf, ip, fp)
             if (rc != VfVulkan.OK) { Log.w("GpuFrameRenderer", "RCD failed: ${VfVulkan.describe(rc)}"); return null }
+            rcdIndex = index; rcdTools = tools
             val t2 = System.nanoTime()
             return use(buf).also {
                 Log.d("GpuFrameRenderer", "frame $index: decode %.0f ms, rcd %.0f ms, grade %.0f ms".format(

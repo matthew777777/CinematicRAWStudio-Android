@@ -2,7 +2,7 @@
 package com.matthew.crs.project
 
 import androidx.compose.foundation.*
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -95,7 +95,7 @@ fun SequenceTimeline(session: ProjectSession, modifier: Modifier = Modifier) {
                                         .semantics { contentDescription = "${p.asset(clip.assetId).name} on ${track.name}"; onClick { session.selectedId = clip.id; true } }
                                         .pointerInput(clip.id) { detectTapGestures { session.selectedId = clip.id } }
                                         .pointerInput(clip.id, widthPx, duration, ExportQueue.running) {
-                                            if (!ExportQueue.running) detectDragGestures(onDragStart = { point ->
+                                            if (!ExportQueue.running) detectHorizontalDragGestures(onDragStart = { point ->
                                                 session.selectedId = clip.id; session.player.pause(); drag = 0f
                                                 val margin = 10.dp.toPx()
                                                 edge = if (size.width > margin * 3 && point.x < margin) -1 else if (size.width > margin * 3 && point.x > size.width - margin) 1 else 0
@@ -107,7 +107,7 @@ fun SequenceTimeline(session: ProjectSession, modifier: Modifier = Modifier) {
                                                     1 -> project.trim(c.id, c.inUs, c.inUs + c.durationUs + delta)
                                                     else -> project.move(c.id, (c.startUs + delta).coerceAtLeast(0))
                                                 } }; drag = 0f
-                                            }) { change, amount -> change.consume(); drag += amount.x }
+                                            }) { change, amount -> change.consume(); drag += amount }
                                         }) {
                                         Text(p.asset(clip.assetId).name.removeSuffix(".craw"), maxLines = 1, overflow = TextOverflow.Ellipsis,
                                             fontSize = 10.sp, color = Color.White, modifier = Modifier.align(Alignment.CenterStart).padding(horizontal = 8.dp))
