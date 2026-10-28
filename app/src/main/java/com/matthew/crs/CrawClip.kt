@@ -65,9 +65,17 @@ class CrawClip private constructor(private var handle: Long) : Closeable {
     fun ccm(neutral: FloatArray): FloatArray? =
         if (handle == 0L) null else nativeCcm(handle, neutral[0], neutral[1], neutral[2])
 
+    /** MLV-App raw-stage tools for subsequent decodes (see [Receipt.rawToolValues]). */
+    fun setRawTools(values: IntArray) { if (handle != 0L) nativeSetRawTools(handle, values) }
+
     /** XYZ->camera matrices (daylight, tungsten) for MLV-App; null if the take has none. */
     fun camMatrices(): Pair<DoubleArray, DoubleArray>? =
         if (handle == 0L) null else nativeCamMatrices(handle)?.let { it.copyOfRange(0, 9) to it.copyOfRange(9, 18) }
+
+    fun writeDevelopedP010(image: android.media.Image, width: Int, height: Int): Boolean = handle != 0L && nativeWriteP010(handle, image, width, height) == 0
+
+    /** Original source frame as CinemaDNG, with capture metadata and no development edits. */
+    fun writeOriginalDng(index: Int, outputFd: Int): Boolean = handle != 0L && nativeWriteDng(handle, index, outputFd) == 0
 
     /** Reads take WAV bytes at [offset] into [dst]; returns the count (<= 0 at the end). */
     fun readWav(offset: Long, dst: ByteArray, length: Int = dst.size): Int =
@@ -115,6 +123,9 @@ class CrawClip private constructor(private var handle: Long) : Closeable {
         @JvmStatic private external fun nativeDecodeToBlob(handle: Long, index: Int, blob: android.hardware.HardwareBuffer, half: Boolean, threads: Int): FloatArray?
         @JvmStatic private external fun nativeCcm(handle: Long, nr: Float, ng: Float, nb: Float): FloatArray?
         @JvmStatic private external fun nativeCamMatrices(handle: Long): DoubleArray?
+        @JvmStatic private external fun nativeSetRawTools(handle: Long, values: IntArray)
+        @JvmStatic private external fun nativeWriteP010(handle: Long, image: android.media.Image, width: Int, height: Int): Int
+        @JvmStatic private external fun nativeWriteDng(handle: Long, index: Int, fd: Int): Int
         @JvmStatic private external fun nativeReadWav(handle: Long, offset: Long, dst: ByteArray, length: Int): Int
     }
 }

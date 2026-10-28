@@ -5,6 +5,7 @@
 // links a clip (video_mlv.c setMlvProcessing), fed with demosaiced camera
 // RGB (RawLens Packed RCD output, normalised 0..1 in half floats).
 #include <jni.h>
+#include "p010_output.h"
 #include <android/bitmap.h>
 #include <android/hardware_buffer.h>
 #include <android/hardware_buffer_jni.h>
@@ -278,6 +279,15 @@ Java_com_matthew_crs_MlvGrade_nativeRender(JNIEnv* env, jclass, jlong h, jobject
     }
     AndroidBitmap_unlockPixels(env, bitmap);
     return 0;
+}
+
+// The full processed RGB16 is retained before the preview's 8-bit conversion.
+JNIEXPORT jint JNICALL
+Java_com_matthew_crs_MlvGrade_nativeWriteP010(JNIEnv* env, jclass, jlong h, jobject image, jint w, jint hh) {
+    auto* g=from(h);if(!g)return -1;
+    std::lock_guard<std::mutex> lock(g->mutex);
+    if(g->out.size()!=size_t(g->w)*g->h*3)return -2;
+    return rgb16ToP010(env,image,g->out.data(),g->w,g->h,w,hh);
 }
 
 }  // extern "C"

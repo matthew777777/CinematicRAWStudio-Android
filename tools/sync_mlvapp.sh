@@ -13,7 +13,11 @@ mkdir -p "$DST"
 git -C "$SRC" archive "$REV" src/processing src/matrix LICENSE | tar -x -C "$DST"
 # processing includes MLV container type headers (src/mlv): headers only.
 git -C "$SRC" archive "$REV" src/mlv src/debayer | tar -x -C "$DST"
-find "$DST/src/mlv" "$DST/src/debayer" -type f ! -name '*.h' -delete
+# Keep only headers, plus the raw-stage tool sources (llrawproc: vertical
+# stripes, pattern noise, bad pixels, chroma smoothing) the app uses.
+find "$DST/src/mlv" "$DST/src/debayer" -type f ! -name '*.h' \
+    ! -path '*/llrawproc/stripes.c' ! -path '*/llrawproc/patternnoise.c' ! -path '*/llrawproc/pixelproc.c' \
+    ! -path '*/llrawproc/chroma_smooth.c' ! -path '*/llrawproc/chroma_smooth_fast5.c' -delete
 # Fixes for bugs found by the parity tests (each patch documents the bug).
 for p in tools/patches/mlv-app/*.patch; do
     [ -e "$p" ] || continue
@@ -24,7 +28,8 @@ done
     echo "# MLV-App image processing — vendored"
     echo
     echo "GPL-3.0 (see LICENSE). Unchanged copy of src/processing and src/matrix"
-    echo "(plus the header files of src/mlv and src/debayer they include)"
+    echo "(plus the header files of src/mlv and src/debayer they include, and the"
+    echo "llrawproc raw-stage tools: stripes, patternnoise, pixelproc, chroma_smooth)"
     echo "from https://github.com/ilia3101/MLV-App commit $REV,"
     echo "synced by tools/sync_mlvapp.sh; do not edit here. Patches applied"
     echo "on top (bug fixes found by the parity tests): tools/patches/mlv-app/."

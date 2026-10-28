@@ -1,0 +1,14 @@
+Bad pixels: interpolate the map sequentially.
+
+Bad pixels are interpolated in place inside an OpenMP parallel loop. When
+two bad pixels are neighbours, one reads the other before or after it is
+repaired depending on thread timing: the result changes with the thread
+count (measured on a real CRAW frame: single-threaded output equals the
+host build, 8 threads differ). The map holds ~10^3 pixels, so the
+sequential loop is cheap and gives MLV-App's single-threaded result.
+
+--- a/src/mlv/llrawproc/pixelproc.c
++++ b/src/mlv/llrawproc/pixelproc.c
+@@ -1466,1 +1466,1 @@
+-            #pragma omp parallel for
++            /* sequential: in-place interpolation of neighbouring bad pixels is order dependent */
