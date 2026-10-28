@@ -52,13 +52,7 @@ fun PlayerScreen(uri: Uri, onBack: () -> Unit) {
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val landscape = configuration.screenWidthDp > configuration.screenHeightDp
-    val window = (context as? android.app.Activity)?.window
-    DisposableEffect(landscape, window) {
-        val controller = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
-        if (landscape) controller?.hide(WindowInsetsCompat.Type.statusBars())
-        else controller?.show(WindowInsetsCompat.Type.statusBars())
-        onDispose { controller?.show(WindowInsetsCompat.Type.statusBars()) }
-    }
+    // System bars are hidden app-wide (MainActivity): full-screen look.
     // One owner opens and closes the session, even when navigation cancels loading.
     val load by produceState(PlayerLoad(), uri) {
         withContext(Dispatchers.IO) {
@@ -156,7 +150,7 @@ fun PlayerScreen(uri: Uri, onBack: () -> Unit) {
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides if (landscape) 36.dp else 48.dp) {
     Scaffold(topBar = { if (!immersive) {
         Surface(color = MaterialTheme.colorScheme.surface) {
-            Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars)
+            Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Top))
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
                 .padding(end = if (landscape) 16.dp else 0.dp).height(if (landscape) 36.dp else 48.dp),
                 verticalAlignment = Alignment.CenterVertically) {

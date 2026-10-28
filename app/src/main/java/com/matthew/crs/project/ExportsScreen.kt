@@ -37,7 +37,7 @@ fun ExportsScreen() {
         if (uri != null && id != null) ExportQueue.retry(context, id, uri.toString())
     }
     Scaffold(topBar = {
-        TopAppBar(title = { Text("Exports") }, actions = {
+        TopAppBar(windowInsets = WindowInsets.displayCutout.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal), title = { Text("Exports") }, actions = {
             if (finished.isNotEmpty()) TextButton(onClick = { ExportQueue.clearFinished(context) }) { Text("Clear finished") }
         })
     }) { pad ->
