@@ -18,12 +18,14 @@ class PlayerEngine(private val clip: CrawClip, private val gpu: GpuFrameRenderer
     /** MLV-App processing for paused frames (vendored MLV-App code). */
     private val grade: MlvGrade? = gpu?.let { runCatching { MlvGrade(clip) }.getOrNull() }
 
-    /** Grade in MLV-App units; null = as shot (MLV-App kelvin/tint found from AsShotNeutral). */
-    var gradeSettings by mutableStateOf<GradeSettings?>(null)
+    /** MLV-App receipt (MLV-App slider units and defaults) for this clip. */
+    var receipt by mutableStateOf(Receipt())
 
-    private fun effectiveSettings(asShot: Pair<Double, Double>): GradeSettings =
-        (gradeSettings ?: GradeSettings(temperature = asShot.first, tint = asShot.second).also { gradeSettings = it })
-            .copy(exposure = exposureEv.toDouble())
+    /** As-shot MLV-App kelvin, once found. */
+    val asShotKelvin: Double? get() = grade?.asShot?.first
+
+    /** True when paused frames are rendered by MLV-App (Bayer takes on the GPU path). */
+    val canGrade: Boolean get() = grade != null
     val clipInfo: ClipInfo = clip.info
     private val info = clipInfo
     private val audio = if (info.hasAudio) TakeAudio(clip) else null
@@ -77,7 +79,7 @@ class PlayerEngine(private val clip: CrawClip, private val gpu: GpuFrameRenderer
         val target = i.coerceIn(0, maxOf(info.frames - 1, 0))
         val t0 = SystemClock.elapsedRealtime()
         if (gpu != null && grade != null && !playing) {
-            val bmp = gpu.renderGraded(target, grade, ::effectiveSettings)
+            val bmp = gpu.renderGraded(target, grade) { receipt }
             if (bmp != null) { frame = bmp; index = target }
             return
         }

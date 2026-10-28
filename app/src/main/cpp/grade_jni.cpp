@@ -126,6 +126,20 @@ Java_com_matthew_crs_MlvGrade_nativeSet(JNIEnv* env, jclass, jlong h, jstring jn
     else if (n == "gamut") processingSetGamut(p, static_cast<int>(v));
     else if (n == "tonemapping") processingSetTonemappingFunction(p, static_cast<int>(v));
     else if (n == "gamma") processingSetGamma(p, v);
+    else if (n == "dcFactor") processingSetDCFactor(p, v);
+    else if (n == "dcRange") processingSetDCRange(p, v);
+    else if (n == "lcFactor") processingSetLCFactor(p, v);
+    else if (n == "lcRange") processingSetLCRange(p, v);
+    else if (n == "lighten") processingSetLightening(p, v);
+    else if (n == "chromaBlur") processingSetChromaBlurRadius(p, static_cast<int>(v));
+    else if (n == "chromaSeparation") { if (v != 0) processingEnableChromaSeparation(p); else processingDisableChromaSeparation(p); }
+    else if (n == "camMatrix") {
+        const int m = static_cast<int>(v);
+        if (m == 0) processingDontUseCamMatrix(p); else if (m == 2) processingUseCamMatrixDanne(p); else processingUseCamMatrix(p);
+    }
+    else if (n == "creative") { if (v != 0) processingAllowCreativeAdjustments(p); else processingDontAllowCreativeAdjustments(p); }
+    else if (n == "exr") { if (v != 0) processingEnableExr(p); else processingDisableExr(p); }
+    else if (n == "agx") { if (v != 0) processingEnableAgX(p); else processingDisableAgX(p); }
     else if (n == "highlightReconstruction") { if (v != 0) processingEnableHighlightReconstruction(p); else processingDisableHighlightReconstruction(p); }
     else return JNI_FALSE;
     return JNI_TRUE;

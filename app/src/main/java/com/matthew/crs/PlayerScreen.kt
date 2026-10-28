@@ -38,6 +38,7 @@ fun PlayerScreen(uri: Uri, onBack: () -> Unit) {
     val context = LocalContext.current
     var clip by remember { mutableStateOf<CrawClip?>(null) }
     var failed by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) }
     LaunchedEffect(uri) {
         val c = withContext(Dispatchers.IO) { CrawClip.open(context, uri) }
         if (c == null) failed = true else clip = c
@@ -69,11 +70,16 @@ fun PlayerScreen(uri: Uri, onBack: () -> Unit) {
             TopAppBar(
                 title = { Text(uri.lastPathSegment?.substringAfterLast('/')?.removeSuffix(".craw") ?: "Take", maxLines = 1) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                actions = {
+                    if (engine?.canGrade == true) TextButton(onClick = { editing = !editing; if (editing) engine?.pause() }) {
+                        Text(if (editing) "Done" else "Edit")
+                    }
+                },
             )
         },
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
-            Box(Modifier.fillMaxWidth().weight(1f).background(Color.Black), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxWidth().weight(if (editing) 0.8f else 1f).background(Color.Black), contentAlignment = Alignment.Center) {
                 val e = engine
                 when {
                     failed -> Text("Cannot open this take", color = Color.Gray)
@@ -84,7 +90,18 @@ fun PlayerScreen(uri: Uri, onBack: () -> Unit) {
                     }
                 }
             }
-            engine?.let { e -> Transport(e) }
+            engine?.let { e ->
+                if (editing) {
+                    // Re-render the paused frame through MLV-App after edits settle.
+                    LaunchedEffect(e.receipt) {
+                        kotlinx.coroutines.delay(120)
+                        withContext(Dispatchers.IO) { e.show(e.index) }
+                    }
+                    EditorPanel(e.receipt, e.asShotKelvin, onChange = { e.receipt = it }, modifier = Modifier.fillMaxWidth().weight(1f))
+                } else {
+                    Transport(e)
+                }
+            }
         }
     }
 }
@@ -117,13 +134,6 @@ private fun Transport(e: PlayerEngine) {
                 Icon(if (e.playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (e.playing) "Pause" else "Play")
             }
             IconButton(onClick = { e.seek(i + 1) }) { Icon(Icons.Default.SkipNext, "Next frame") }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Exposure %+.1f EV".format(e.exposureEv), fontSize = 12.sp, modifier = Modifier.width(120.dp))
-            Slider(
-                value = e.exposureEv, onValueChange = { e.exposureEv = it }, valueRange = -4f..4f,
-                onValueChangeFinished = { if (!e.playing) e.seek(i) },
-            )
         }
         if (e.renderPath == "GPU RCD") {
             val context = LocalContext.current
