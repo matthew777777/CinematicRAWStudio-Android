@@ -18,12 +18,27 @@ android {
         ndk { abiFilters += listOf("arm64-v8a") }
         externalNativeBuild { cmake { arguments += listOf("-DANDROID_STL=c++_shared") } }
     }
+    // Device tests and benchmarks run on deviceTest: release in every respect
+    // but R8 (as RawLens). -PtestBuildType=release runs them on the minified APK.
+    testBuildType = (project.findProperty("testBuildType") as String?) ?: "deviceTest"
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
+            isDebuggable = false
+            isJniDebuggable = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // Sideload/dev builds: sign with the debug key until a release key exists.
             signingConfig = signingConfigs.getByName("debug")
+            // Native code is CMake Release (-O3). For benchmarks force full AOT after install:
+            //   adb shell cmd package compile -m speed -f com.matthew.crs
+            externalNativeBuild { cmake { arguments += listOf("-DCMAKE_BUILD_TYPE=Release") } }
+        }
+        create("deviceTest") {
+            initWith(getByName("release"))
+            isMinifyEnabled = false
+            isShrinkResources = false
+            matchingFallbacks += listOf("release")
         }
     }
     buildFeatures { compose = true }

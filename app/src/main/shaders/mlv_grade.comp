@@ -43,8 +43,9 @@ const int F_CREATIVE = 1, F_CONTRAST = 2, F_CAM = 4, F_EXR = 8, F_AGX = 16, F_HI
 uint u16(int table, uint i) { return (t[table + int(i >> 1)] >> ((i & 1u) << 4)) & 0xffffu; }
 int i32(int table, int i) { return int(t[table + i]); }
 float f32(int table, int i) { return uintBitsToFloat(t[table + i]); }
-// MLV-App LIMIT16 (clamp) followed by the implicit float -> uint16_t truncation.
-uint lim(float x) { return uint(clamp(x, 0.0, 65535.0)); }
+// MLV-App LIMIT16 = MAX(MIN(x, 65535), 0) with its comparison order (NaN gives
+// 65535), then the implicit float -> uint16_t truncation.
+uint lim(float x) { float m = x < 65535.0 ? x : 65535.0; return uint(m > 0.0 ? m : 0.0); }
 int limi(int x) { return clamp(x, 0, 65535); }
 
 float reinhard(float x) { return x < 0.0 ? x : x / (1.0 + x); }
@@ -94,9 +95,12 @@ float untouchedSat(uvec3 px) {
 void main() {
     ivec2 xy = ivec2(gl_GlobalInvocationID.xy);
     if (xy.x >= p.width || xy.y >= p.height) return;
-    // Same quantisation as the CPU path: half float * 65535 + 0.5, clamped.
+    // Same quantisation as the CPU path (readRcd): half float * 65535 + 0.5,
+    // clamped; 'precise' keeps the multiply and add separately rounded.
     vec3 c = imageLoad(src, xy).rgb;
-    uvec3 px = uvec3(clamp(c * 65535.0 + 0.5, 0.0, 65535.0));
+    precise vec3 scaled = c * 65535.0;
+    precise vec3 rounded = scaled + 0.5;
+    uvec3 px = uvec3(clamp(rounded, 0.0, 65535.0));
     // Black + white level are composed into the pm tables below.
 
     float expo = 1.0;
@@ -124,6 +128,17 @@ void main() {
     if ((p.flags & F_CAM) != 0) {
         vec3 b = vec3(px);
         vec3 r = vec3(dot(p.wb[0].xyz, b), dot(p.wb[1].xyz, b), dot(p.wb[2].xyz, b));
+        // A grey pixel (Y == min channel, Y > 0) makes MLV-App's desaturation
+        // 0/0 = NaN; the NaN passes AgX's '< 0' clip and LIMIT16 makes it 65535.
+        // Vulkan does not guarantee NaN propagation, so that case is explicit.
+        bool nanPixel = false;
+        if ((p.flags & F_EXR) == 0) {
+            float Y0 = dot(p.rgbToY.xyz, r);
+            nanPixel = Y0 > 0.0 && Y0 - min(min(r.r, r.g), r.b) == 0.0;
+        }
+        if (nanPixel) {
+            px = uvec3(65535u);
+        } else {
         if ((p.flags & F_EXR) == 0) {
             float Y = dot(p.rgbToY.xyz, r);
             float minc = min(min(r.r, r.g), r.b);
@@ -144,6 +159,7 @@ void main() {
             px = uvec3(lim(dot(p.agx[0].xyz, r)), lim(dot(p.agx[1].xyz, r)), lim(dot(p.agx[2].xyz, r)));
         } else {
             px = uvec3(lim(r.r), lim(r.g), lim(r.b));
+        }
         }
     }
     // Gamma (profile / transfer).
