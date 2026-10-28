@@ -159,6 +159,7 @@ fun GalleryScreen(onOpen: (Uri) -> Unit, onOpenProject: (String) -> Unit = {}) {
     var deleteFor by remember { mutableStateOf<Take?>(null) }
     var added by remember { mutableStateOf<String?>(null) }
     var deleteError by remember { mutableStateOf<String?>(null) }
+    var about by remember { mutableStateOf(false) }
     var refresh by remember { mutableIntStateOf(0) }
     var error by remember { mutableStateOf<String?>(null) }
     val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -268,6 +269,8 @@ fun GalleryScreen(onOpen: (Uri) -> Unit, onOpenProject: (String) -> Unit = {}) {
                     DropdownMenu(libraryMenu, { libraryMenu = false }) {
                         DropdownMenuItem(text = { Text("Choose takes folder") }, leadingIcon = { Icon(Icons.Default.FolderOpen, null) },
                             onClick = { libraryMenu = false; pickFolder.launch(null) })
+                        DropdownMenuItem(text = { Text("About & licences") }, leadingIcon = { Icon(Icons.Default.Info, null) },
+                            onClick = { libraryMenu = false; about = true })
                         DropdownMenuItem(text = { Text("Refresh library") }, enabled = tree != null,
                             leadingIcon = { Icon(Icons.Default.Refresh, null) }, onClick = { libraryMenu = false; refresh++ })
                     }
@@ -330,6 +333,7 @@ fun GalleryScreen(onOpen: (Uri) -> Unit, onOpenProject: (String) -> Unit = {}) {
     }
     }
     if (exportJobs) com.matthew.crs.project.ExportPanel(onDismiss = { exportJobs = false })
+    if (about) AboutSheet(onDismiss = { about = false })
     if (sortSheet) SortFilterSheet(sort, filter, onSort = { sort = it }, onFilter = { filter = it }, onDismiss = { sortSheet = false })
     menuFor?.let { take ->
         TakeActionsSheet(take, onDismiss = { menuFor = null },

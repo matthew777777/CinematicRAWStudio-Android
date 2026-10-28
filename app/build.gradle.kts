@@ -19,8 +19,29 @@ android {
         externalNativeBuild { cmake { arguments += listOf("-DANDROID_STL=c++_shared") } }
     }
     // Device tests and benchmarks run on deviceTest: release in every respect
-    // but R8 (as RawLens). -PtestBuildType=release runs them on the minified APK.
+    // but R8 (as RawLens). The minified APK cannot host instrumentation (R8 removes
+    // Kotlin runtime classes the test APK needs), so it gets a manual smoke run per release.
     testBuildType = (project.findProperty("testBuildType") as String?) ?: "deviceTest"
+    signingConfigs {
+        // Release builds sign with a real key via environment (as RawLens):
+        // CRS_KEYSTORE (absolute path), CRS_KEY_ALIAS, CRS_KEYSTORE_PASSWORD, CRS_KEY_PASSWORD.
+        // A CRS_KEYSTORE that does not exist fails the build rather than
+        // shipping a wrongly signed APK. Without it, the debug key is used
+        // (fresh checkouts build and install with no secret).
+        val keystorePath = System.getenv("CRS_KEYSTORE")
+        if (!keystorePath.isNullOrBlank()) {
+            create("releaseEnv") {
+                val keystoreFile = file(keystorePath)
+                if (!keystoreFile.exists()) error("CRS_KEYSTORE points at a missing file: $keystorePath")
+                fun env(name: String) = System.getenv(name)?.takeIf { it.isNotEmpty() }
+                    ?: error("CRS_KEYSTORE is set but $name is missing")
+                storeFile = keystoreFile
+                storePassword = env("CRS_KEYSTORE_PASSWORD")
+                keyAlias = env("CRS_KEY_ALIAS")
+                keyPassword = env("CRS_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -28,8 +49,8 @@ android {
             isDebuggable = false
             isJniDebuggable = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Sideload/dev builds: sign with the debug key until a release key exists.
-            signingConfig = signingConfigs.getByName("debug")
+            // The CRS_KEYSTORE key when provided, otherwise the debug key.
+            signingConfig = signingConfigs.findByName("releaseEnv") ?: signingConfigs.getByName("debug")
             // Native code is CMake Release (-O3). For benchmarks force full AOT after install:
             //   adb shell cmd package compile -m speed -f com.matthew.crs
             externalNativeBuild { cmake { arguments += listOf("-DCMAKE_BUILD_TYPE=Release") } }
