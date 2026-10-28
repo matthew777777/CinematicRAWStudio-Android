@@ -9,6 +9,8 @@ import kotlinx.coroutines.channels.Channel
 class ProjectSession(private val context: Context, initial: SequenceProject) : AutoCloseable {
     var project by mutableStateOf(initial); private set
     var selectedId by mutableStateOf<String?>(null)
+    /** The clip inspector shows the Grade tab (set by the timeline's Grade action). */
+    var inspectorGrade by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
     var saved by mutableStateOf(true); private set
     var importing by mutableStateOf(false)
