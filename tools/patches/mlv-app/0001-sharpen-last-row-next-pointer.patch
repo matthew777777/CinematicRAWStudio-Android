@@ -1,0 +1,13 @@
+Sharpen: on the last row the "next row" pointer was never set.
+
+`if( y == y_max ) p_row = row;` assigns p_row where n_row was meant, so the
+last row reads an uninitialised n_row: undefined behaviour; with OpenMP the
+last row's result changes with the thread count (measured: exactly one row
+differs between 1 and 8 threads). Clamp n_row to the row itself, mirroring
+the first row's p_row.
+
+--- a/src/processing/raw_processing.c
++++ b/src/processing/raw_processing.c
+@@ -611,1 +611,1 @@
+-            if( y == y_max ) p_row = row;    /* minimize border artifact */
++            if( y == y_max ) n_row = row;    /* minimize border artifact */
