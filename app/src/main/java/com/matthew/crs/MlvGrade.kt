@@ -266,6 +266,25 @@ class MlvGrade(clip: CrawClip) : Closeable {
 
     fun writeProcessedP010(image: android.media.Image, width: Int, height: Int): Boolean = handle != 0L && nativeWriteP010(handle, image, width, height) == 0
 
+    /**
+     * MLV-App's grade on Vulkan, straight from the RCD output into a P010 codec
+     * Image (fitted to width x height). Null when these settings need the CPU
+     * path (blur-based or spatial stages); otherwise whether it succeeded.
+     */
+    fun gpuWriteP010(rgbF16: HardwareBuffer, image: android.media.Image, width: Int, height: Int): Boolean? {
+        if (handle == 0L) return false
+        return when (nativeGpuWriteP010(handle, rgbF16, image, width, height)) { 0 -> true; 1 -> null; else -> false }
+    }
+
+    /** [render] on Vulkan; null when the CPU path is needed. */
+    fun gpuRender(rgbF16: HardwareBuffer, out: Bitmap): Boolean? {
+        if (handle == 0L) return false
+        return when (nativeGpuRender(handle, rgbF16, out)) { 0 -> true; 1 -> null; else -> false }
+    }
+
+    /** {max diff, differing pixels, pixels, sum diff} of Vulkan vs MLV-App's CPU code, or null. */
+    fun gpuParity(rgbF16: HardwareBuffer): LongArray? = if (handle == 0L) null else nativeGpuParity(handle, rgbF16)
+
     @Synchronized
     override fun close() {
         if (handle != 0L) { nativeFree(handle); handle = 0 }
@@ -286,5 +305,8 @@ class MlvGrade(clip: CrawClip) : Closeable {
         @JvmStatic private external fun nativeInterpolate(kind: Int, xs: FloatArray, ys: FloatArray, n: Int): FloatArray?
         @JvmStatic private external fun nativeWriteP010(handle: Long, image: android.media.Image, width: Int, height: Int): Int
         @JvmStatic private external fun nativeRender(handle: Long, rgbF16: HardwareBuffer, out: Bitmap): Int
+        @JvmStatic private external fun nativeGpuWriteP010(handle: Long, rgbF16: HardwareBuffer, image: android.media.Image, width: Int, height: Int): Int
+        @JvmStatic private external fun nativeGpuRender(handle: Long, rgbF16: HardwareBuffer, out: Bitmap): Int
+        @JvmStatic private external fun nativeGpuParity(handle: Long, rgbF16: HardwareBuffer): LongArray?
     }
 }

@@ -18,9 +18,22 @@ target_include_directories(mlvprocessing PUBLIC ${MLV}/processing ${MLV}/mlv)
 target_compile_options(mlvprocessing PRIVATE -O3 -ftree-vectorize -fno-math-errno -w -fopenmp)
 target_link_options(mlvprocessing PUBLIC -fopenmp -static-openmp)
 
+# MLV-App grade on Vulkan (src/main/shaders), embedded as SPIR-V words.
+find_program(GLSLC glslc HINTS ${ANDROID_NDK}/shader-tools/${ANDROID_HOST_TAG} ${ANDROID_NDK}/shader-tools/darwin-x86_64
+    ${ANDROID_NDK}/shader-tools/linux-x86_64 ${ANDROID_NDK}/shader-tools/windows-x86_64 REQUIRED)
+foreach(SHADER mlv_grade mlv_output)
+    add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${SHADER}.spv.inc
+        COMMAND ${GLSLC} --target-env=vulkan1.1 -O -fshader-stage=compute -mfmt=num
+            -o ${CMAKE_CURRENT_BINARY_DIR}/${SHADER}.spv.inc ${CMAKE_CURRENT_SOURCE_DIR}/../shaders/${SHADER}.comp
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/../shaders/${SHADER}.comp VERBATIM)
+endforeach()
+
 add_library(crs SHARED
     clip_jni.cpp
     grade_jni.cpp
+    mlv_gpu.cpp
+    ${CMAKE_CURRENT_BINARY_DIR}/mlv_grade.spv.inc
+    ${CMAKE_CURRENT_BINARY_DIR}/mlv_output.spv.inc
     raw_tools.cpp
     ${CRAW}/encoder/src/Encoder.cpp
     ${CRAW}/encoder/src/Writer.cpp
@@ -28,10 +41,10 @@ add_library(crs SHARED
     ${CRAW}/decoder/src/Reader.cpp
     ${CRAW}/decoder/tools/common/Clip.cpp
     ${CRAW}/develop/Develop.cpp)
-target_include_directories(crs PRIVATE ${CRAW}/encoder/include ${CRAW}/decoder/include ${CRAW}/decoder/tools ${CRAW}/develop)
+target_include_directories(crs PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${CRAW}/encoder/include ${CRAW}/decoder/include ${CRAW}/decoder/tools ${CRAW}/develop)
 # armv8-a+crc: hardware CRC32C (frame CRCs are verified on every decode).
 target_compile_options(crs PRIVATE -O3 -fno-finite-math-only -march=armv8-a+crc)
-target_link_libraries(crs PRIVATE mlvprocessing jnigraphics android log)
+target_link_libraries(crs PRIVATE mlvprocessing jnigraphics android log vulkan)
 
 # RawLens Vulkan Direct-Log pipeline, vendored unchanged (third_party/rawlens-gpu).
 set(RLGPU ${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/rawlens-gpu/cpp)

@@ -175,6 +175,7 @@ class GpuFrameRenderer(private val clip: CrawClip, width: Int, height: Int) : Au
     }
 
     fun stopPlayback() {
+        for (key in ahead.keys.toList()) releaseReadAhead(key)
         playing = false
         // Workers notice within one decode; their slots return as frames finish.
         val deadline = System.currentTimeMillis() + 1000
@@ -186,16 +187,52 @@ class GpuFrameRenderer(private val clip: CrawClip, width: Int, height: Int) : Au
     private val graded = arrayOfNulls<Bitmap>(2)
     private var gradedNext = 0
 
+    // --- Export read-ahead: full-resolution decodes of the next frames on the
+    // decode workers while the current one is on the GPU. Keyed by the raw-tool
+    // settings they were decoded with; a mismatch is decoded again. ---
+    private class Ahead(val tools: List<Int>, val slot: java.util.concurrent.Future<Slot?>)
+    private val ahead = java.util.concurrent.ConcurrentHashMap<Int, Ahead>()
+
+    private fun startReadAhead(index: Int, tools: List<Int>) {
+        if (index >= clip.info.frames || ahead.containsKey(index)) return
+        // Keep a slot for the direct decode path.
+        val slot = if (free.size > 1) free.poll() else null
+        slot ?: return
+        ahead[index] = Ahead(tools, decoders.submit(java.util.concurrent.Callable {
+            val p = clip.decodeToBlob(index, slot.blob, false, workerThreads)
+            if (p == null) { free.add(slot); null } else slot.also { it.index = index; it.half = false; it.params = p }
+        }))
+    }
+
+    private fun takeReadAhead(index: Int, tools: List<Int>): Slot? {
+        // Anything else read ahead (a seek, another clip) is released.
+        for (key in ahead.keys.toList()) if (key != index && key !in index + 1..index + 8) releaseReadAhead(key)
+        val a = ahead.remove(index) ?: return null
+        val slot = a.slot.get() ?: return null
+        if (a.tools == tools) return slot
+        free.add(slot)
+        return null
+    }
+
+    private fun releaseReadAhead(index: Int) {
+        ahead.remove(index)?.slot?.get()?.let { free.add(it) }
+    }
+
     /**
-     * Frame [index] at full resolution through MLV-App's processing (vendored
-     * MLV-App code): Packed RCD to camera RGB, then [grade]. For paused frames;
-     * playback uses the fused GPU grade.
+     * Frame [index] at full resolution through Packed RCD to camera RGB
+     * (RGBA16F), with [grade] set up for [receipt]; [use] then runs MLV-App's
+     * processing on it. Returns null when decoding or RCD fails.
      */
-    fun renderGraded(index: Int, grade: MlvGrade, receipt: () -> Receipt): Bitmap? {
+    private fun <T> withRcd(index: Int, grade: MlvGrade, receipt: () -> Receipt, readAhead: Int = 0,
+                            use: (HardwareBuffer) -> T?): T? {
         synchronized(RawRenderGate.lock) {
         if (!GpuPipeline.ensureRcdMode(fused = false)) return null
-        val slot = decode(index, false) ?: return null
+        val t0 = System.nanoTime()
+        val tools = receipt().rawToolValues().toList()
+        val slot = takeReadAhead(index, tools) ?: decode(index, false) ?: return null
+        for (next in index + 1..index + readAhead) startReadAhead(next, tools)
         try {
+            val t1 = System.nanoTime()
             val f = slot.params ?: return null
             if (grade.asShot == null) grade.findAsShot(f.neutral)
             grade.apply(receipt())
@@ -204,20 +241,51 @@ class GpuFrameRenderer(private val clip: CrawClip, width: Int, height: Int) : Au
                     HardwareBuffer.USAGE_GPU_COLOR_OUTPUT or HardwareBuffer.USAGE_CPU_READ_OFTEN).also { rgbF16 = it }
             val pattern = BayerPattern.entries[f.cfa.coerceIn(0, 3)]
             val (ip, fp) = VfRcd.packRcd(w, h, 0, 0, VfRcd.channelsFromPattern(pattern), f.width, 0, f.black, f.white)
-            val t0 = System.nanoTime()
             val rc = VfPackedRcd.processNative(slot.blob, buf, ip, fp)
             if (rc != VfVulkan.OK) { Log.w("GpuFrameRenderer", "RCD failed: ${VfVulkan.describe(rc)}"); return null }
-            val t1 = System.nanoTime()
-            val out = graded[gradedNext] ?: Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also { graded[gradedNext] = it }
-            if (!grade.render(buf, out)) return null
-            Log.i("GpuFrameRenderer", "graded $index: rcd %.1f ms, MLV-App %.1f ms".format((t1 - t0) / 1e6, (System.nanoTime() - t1) / 1e6))
-            gradedNext = 1 - gradedNext
-            return out
+            val t2 = System.nanoTime()
+            return use(buf).also {
+                Log.d("GpuFrameRenderer", "frame $index: decode %.0f ms, rcd %.0f ms, grade %.0f ms".format(
+                    (t1 - t0) / 1e6, (t2 - t1) / 1e6, (System.nanoTime() - t2) / 1e6))
+            }
         } finally {
             free.add(slot)
         }
         }
     }
+
+    /**
+     * Frame [index] at full resolution through MLV-App's processing: on Vulkan
+     * (the shader port of MLV-App's per-pixel loop) when the settings allow,
+     * else MLV-App's own CPU code. For paused frames; playback uses the fused
+     * GPU grade.
+     */
+    fun renderGraded(index: Int, grade: MlvGrade, receipt: () -> Receipt): Bitmap? = withRcd(index, grade, receipt) { buf ->
+        val t0 = System.nanoTime()
+        val out = graded[gradedNext] ?: Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also { graded[gradedNext] = it }
+        val onGpu = grade.gpuRender(buf, out)
+        if (onGpu == false || (onGpu == null && !grade.render(buf, out))) return@withRcd null
+        Log.i("GpuFrameRenderer", "graded $index: MLV-App %s %.1f ms".format(if (onGpu == true) "Vulkan" else "CPU", (System.nanoTime() - t0) / 1e6))
+        gradedNext = 1 - gradedNext
+        out
+    }
+
+    /**
+     * Frame [index] graded and fitted into a P010 codec [image]. Vulkan writes
+     * the planes directly; settings that need MLV-App's CPU stages go through
+     * [MlvGrade.render] and its RGB16 result.
+     */
+    fun writeGradedP010(index: Int, grade: MlvGrade, receipt: () -> Receipt, image: android.media.Image, width: Int, height: Int): Boolean =
+        withRcd(index, grade, receipt, readAhead = 2) { buf ->
+            grade.gpuWriteP010(buf, image, width, height) ?: run {
+                val out = graded[gradedNext] ?: Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also { graded[gradedNext] = it }
+                grade.render(buf, out) && grade.writeProcessedP010(image, width, height)
+            }
+        } ?: false
+
+    /** Vulkan vs MLV-App CPU on frame [index] (see [MlvGrade.gpuParity]). */
+    fun gpuParity(index: Int, grade: MlvGrade, receipt: () -> Receipt): LongArray? =
+        withRcd(index, grade, receipt) { grade.gpuParity(it) }
 
     /** Hardware Bitmap of frame [index]: half-size proxy while playing, else full resolution. */
     fun render(index: Int, exposureEv: Float, playing: Boolean = false): Bitmap? {

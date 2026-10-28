@@ -1,0 +1,53 @@
+#version 450
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Processed RGB16 (mlv_grade.comp) -> output canvas: fit with letterbox,
+// bilinear, then limited-range BT.709 P010 (Y per pixel, CbCr from the 2x2
+// average) for MediaCodec and RGBA8 for display. Same formulas as the CPU
+// writer (p010_output.h). One invocation per 2x2 output block.
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(std430, binding = 0) readonly buffer Src { uvec2 src[]; };
+layout(std430, binding = 1) writeonly buffer Luma { uint y[]; };     // 2 x 16-bit per uint
+layout(std430, binding = 2) writeonly buffer Chroma { uint uv[]; };  // Cb | Cr << 16
+layout(std430, binding = 3) writeonly buffer Rgba { uint rgba[]; };  // RGBA8 (A = 255)
+layout(push_constant) uniform Push { int sw, sh, w, h, writeRgba; } p;
+
+vec3 at(int x, int yy) {
+    uvec2 v = src[yy * p.sw + x];
+    return vec3(float(v.x & 0xffffu), float(v.x >> 16), float(v.y & 0xffffu));
+}
+vec3 sampleOut(int x, int yy, float scale, float left, float top) {
+    float fx = float(x) + 0.5, fy = float(yy) + 0.5;
+    if (fx < left || fy < top || fx >= left + float(p.sw) * scale || fy >= top + float(p.sh) * scale) return vec3(0.0);
+    float sx = clamp((fx - left) / scale - 0.5, 0.0, float(p.sw - 1));
+    float sy = clamp((fy - top) / scale - 0.5, 0.0, float(p.sh - 1));
+    int x0 = int(sx), y0 = int(sy), x1 = min(x0 + 1, p.sw - 1), y1 = min(y0 + 1, p.sh - 1);
+    float ax = sx - float(x0), ay = sy - float(y0);
+    vec3 a = mix(at(x0, y0), at(x1, y0), ax), b = mix(at(x0, y1), at(x1, y1), ax);
+    return mix(a, b, ay) / 65535.0;
+}
+// floor(v + 0.5) == std::lround for v >= 0 (the CPU writer), unlike GLSL round().
+uint code(float v) { return uint(clamp(floor(v + 0.5), 0.0, 1023.0)) << 6; }
+uint byte8(float v) { return uint(clamp(v * 65535.0, 0.0, 65535.0)) >> 8; }
+
+void main() {
+    int bx = int(gl_GlobalInvocationID.x) * 2, by = int(gl_GlobalInvocationID.y) * 2;
+    if (bx >= p.w || by >= p.h) return;
+    float scale = min(float(p.w) / float(p.sw), float(p.h) / float(p.sh));
+    float left = (float(p.w) - float(p.sw) * scale) * 0.5, top = (float(p.h) - float(p.sh) * scale) * 0.5;
+    vec3 avg = vec3(0.0);
+    uint lum[4];
+    for (int k = 0; k < 4; ++k) {
+        int x = bx + (k & 1), yy = by + (k >> 1);
+        vec3 c = sampleOut(x, yy, scale, left, top);
+        lum[k] = code(64.0 + 876.0 * (0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b));
+        avg += c * 0.25;
+        if (p.writeRgba != 0)
+            rgba[yy * p.w + x] = byte8(c.r) | (byte8(c.g) << 8) | (byte8(c.b) << 16) | 0xff000000u;
+    }
+    y[(by * p.w + bx) / 2] = lum[0] | (lum[1] << 16);
+    y[((by + 1) * p.w + bx) / 2] = lum[2] | (lum[3] << 16);
+    float Y = 0.2126 * avg.r + 0.7152 * avg.g + 0.0722 * avg.b;
+    uv[(by / 2) * (p.w / 2) + bx / 2] = code(512.0 + 896.0 * (avg.b - Y) / 1.8556) | (code(512.0 + 896.0 * (avg.r - Y) / 1.5748) << 16);
+}

@@ -1,0 +1,15 @@
+Luma vs saturation: keep the table index inside the table.
+
+Hue vs luma can raise a pixel's HSV value above 1 (hsl[2] *= 1 + curve * sat
+* 2, with no upper clamp, deliberately), and the luma vs saturation lookup
+then indexes luma_vs_saturation[36000] with (uint16_t)(hsl[2] * 36000.0),
+up to 65535: an out-of-bounds read into the processing object's following
+fields or beyond (undefined behaviour). Found by the Vulkan parity test:
+saturated yellows brightened by a hue vs luma curve came out as garbage
+saturation. The curve's last entry (value 1.0) is used for brighter pixels.
+
+--- a/src/processing/raw_processing.c
++++ b/src/processing/raw_processing.c
+@@ -1117,1 +1117,1 @@
+-            uint16_t luma = (uint16_t)((hsl[2]) * 36000.0);
++            uint16_t luma = (uint16_t)MIN((hsl[2]) * 36000.0, 35999.0);

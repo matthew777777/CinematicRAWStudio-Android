@@ -1,0 +1,196 @@
+#version 450
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// MLV-App's per-pixel processing (src/processing/raw_processing.c,
+// apply_processing_object, vendored MLV-App c4357a3) as a Vulkan compute
+// shader. Every table is MLV-App's own (uploaded from its processing object),
+// so each slider means what it means in MLV-App. Stages follow MLV-App's
+// order: levels, vignette, contrast factor, white balance + exposure,
+// highlight reconstruction, camera matrix + gamut desaturation, AgX, gamma,
+// Hue-vs curves, vibrance, saturation, toning, contrast curve, gradation
+// curves, inverse AgX. Not here (CPU path): the blur-based clarity and
+// shadows/highlights, gradient mask, LUT and film filter.
+//
+// Input: RawLens Packed RCD camera RGB (RGBA16F, 0..1). Output: processed
+// RGB16 as uvec2 (r | g << 16, b) per pixel.
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0, rgba16f) uniform readonly image2D src;
+layout(std430, binding = 1) readonly buffer Tables { uint t[]; };
+layout(std430, binding = 2) writeonly buffer Dst { uvec2 dst[]; };
+
+// std140 matches the C++ Params struct (scalars and vec4s only).
+layout(std140, binding = 3) uniform Params {
+    int width, height, flags, highestGreen;
+    float vignetteStrength, toningDry, pad0, pad1;
+    vec4 toningWet;
+    vec4 wb[3];        // proper_wb_matrix rows (xyz)
+    vec4 agx[3];       // agx_compressed_matrix rows
+    vec4 agxInv[3];    // inverse rows
+    vec4 rgbToY;       // xyz
+    // Offsets (in uints) of MLV-App's tables inside Tables. Lookups that MLV-App
+    // applies back to back are composed on the CPU (exact: uint16 -> uint16):
+    // oPm* = pre_calc_matrix[c][pre_calc_levels[x]],
+    // oOut* = gcurve_c[gcurve_y[pre_calc_curve_r[x]]].
+    int oPm0, oPm4, oPm8, oGamma, oOutR, oOutG, oOutB, pad2, pad3, pad4;
+    int oSat, oVib, oHueHue, oHueSat, oHueLuma, oLumaSat, oContrast, oVignette;
+} p;
+
+const int F_CREATIVE = 1, F_CONTRAST = 2, F_CAM = 4, F_EXR = 8, F_AGX = 16, F_HIGHLIGHTS = 32,
+          F_HUEVS = 64, F_VIB = 128, F_VIB_POS = 256, F_SAT = 512, F_TONING = 1024, F_VIGNETTE = 2048;
+
+// uint16 tables are packed two entries per word (half the cache footprint).
+uint u16(int table, uint i) { return (t[table + int(i >> 1)] >> ((i & 1u) << 4)) & 0xffffu; }
+int i32(int table, int i) { return int(t[table + i]); }
+float f32(int table, int i) { return uintBitsToFloat(t[table + i]); }
+// MLV-App LIMIT16 (clamp) followed by the implicit float -> uint16_t truncation.
+uint lim(float x) { return uint(clamp(x, 0.0, 65535.0)); }
+int limi(int x) { return clamp(x, 0, 65535); }
+
+float reinhard(float x) { return x < 0.0 ? x : x / (1.0 + x); }
+float reinhardColour(float x) { return x < 0.5 ? x : reinhard((x - 0.5) / 0.5) * 0.5 + 0.5; }
+float reinhardBlue(float x) { return x < 0.7 ? x : reinhard((x - 0.7) / 0.3) * 0.3 + 0.7; }
+
+vec3 rgbToHsv(vec3 rgb) {
+    vec3 hsv = vec3(0.0);
+    hsv.z = max(rgb.r, max(rgb.g, rgb.b));
+    float delta = hsv.z - min(rgb.r, min(rgb.g, rgb.b));
+    if (delta < 1.175494e-38) hsv.y = 0.0;
+    else {
+        hsv.y = delta / hsv.z;
+        if (rgb.r >= hsv.z) { hsv.x = (rgb.g - rgb.b) / delta; if (hsv.x < 0.0) hsv.x += 6.0; }
+        else if (rgb.g >= hsv.z) hsv.x = 2.0 + (rgb.b - rgb.r) / delta;
+        else hsv.x = 4.0 + (rgb.r - rgb.g) / delta;
+    }
+    hsv.x *= 60.0;
+    return hsv;
+}
+vec3 hsvToRgb(vec3 hsv) {
+    if (hsv.y < 1.175494e-38) return vec3(hsv.z);
+    float h = hsv.x / 60.0; int i = int(h); float f = h - float(i);
+    float pp = hsv.z * (1.0 - hsv.y);
+    if ((i & 1) != 0) {
+        float q = hsv.z * (1.0 - hsv.y * f);
+        if (i == 1) return vec3(q, hsv.z, pp);
+        if (i == 3) return vec3(pp, q, hsv.z);
+        return vec3(hsv.z, pp, q);
+    }
+    float tt = hsv.z * (1.0 - hsv.y * (1.0 - f));
+    if (i == 0) return vec3(hsv.z, tt, pp);
+    if (i == 2) return vec3(pp, hsv.z, tt);
+    return vec3(tt, pp, hsv.z);
+}
+// "Saturation of the untouched pixel" with MLV-App's cheat factor.
+float untouchedSat(uvec3 px) {
+    float s = 0.0;
+    if (!(px.r == 0u && px.g == 0u && px.b == 0u)) {
+        uint big = max(px.r, max(px.g, px.b)), small = min(px.r, min(px.g, px.b));
+        s = (float(big) - float(small)) / float(big);
+    }
+    s = 2.0 * s / (s * s + 1.0);
+    return min(s, 1.0);
+}
+
+void main() {
+    ivec2 xy = ivec2(gl_GlobalInvocationID.xy);
+    if (xy.x >= p.width || xy.y >= p.height) return;
+    // Same quantisation as the CPU path: half float * 65535 + 0.5, clamped.
+    vec3 c = imageLoad(src, xy).rgb;
+    uvec3 px = uvec3(clamp(c * 65535.0 + 0.5, 0.0, 65535.0));
+    // Black + white level are composed into the pm tables below.
+
+    float expo = 1.0;
+    if ((p.flags & F_VIGNETTE) != 0) {
+        // MLV-App advances its mask pointer before reading: pixel i uses mask[i + 1].
+        int i = xy.y * p.width + xy.x + 1;
+        if (i < p.width * p.height) {
+            float vig = 1.0 + f32(p.oVignette, i) * p.vignetteStrength / 128.0;
+            float vig2 = vig * vig;
+            expo *= vig2 * vig2;
+        }
+    }
+    int pm0 = i32(p.oPm0, int(px.r)), pm4 = i32(p.oPm4, int(px.g)), pm8 = i32(p.oPm8, int(px.b));
+    if ((p.flags & (F_CREATIVE | F_CONTRAST)) == (F_CREATIVE | F_CONTRAST)) {
+        int cval = ((pm0 << 2) + pm4 * 11 + pm8) >> 4;
+        expo *= f32(p.oContrast, limi(cval));
+    }
+    // White balance & exposure.
+    float pix0 = float(pm0) * expo, pix1 = float(pm4) * expo, pix2 = float(pm8) * expo;
+    float tmp1 = float(lim(float(pm4)));
+    px = uvec3(lim(pix0), lim(pix1), lim(pix2));
+    if ((p.flags & F_HIGHLIGHTS) != 0 && tmp1 == float(p.highestGreen))
+        px.g = (px.r + px.b) / 2u;
+
+    if ((p.flags & F_CAM) != 0) {
+        vec3 b = vec3(px);
+        vec3 r = vec3(dot(p.wb[0].xyz, b), dot(p.wb[1].xyz, b), dot(p.wb[2].xyz, b));
+        if ((p.flags & F_EXR) == 0) {
+            float Y = dot(p.rgbToY.xyz, r);
+            float minc = min(min(r.r, r.g), r.b);
+            vec3 r2;
+            for (int i = 0; i < 3; ++i) {
+                float d = (Y - r[i]) / Y;
+                // MLV-App: 'if (i == 0) colour; else blue' runs after the i == 1 case,
+                // so green also gets the blue curve.
+                float tm = (i == 0) ? reinhardColour(d) : reinhardBlue(d);
+                r2[i] = -(tm * Y) + Y;
+            }
+            float desat = (Y - min(min(r2.r, r2.g), r2.b)) / (Y - minc);
+            if (Y <= 0.0) desat = 1.0;
+            r = (r - Y) * desat + Y;
+        }
+        if ((p.flags & F_AGX) != 0) {
+            r = max(r, vec3(0.0));
+            px = uvec3(lim(dot(p.agx[0].xyz, r)), lim(dot(p.agx[1].xyz, r)), lim(dot(p.agx[2].xyz, r)));
+        } else {
+            px = uvec3(lim(r.r), lim(r.g), lim(r.b));
+        }
+    }
+    // Gamma (profile / transfer).
+    px = uvec3(u16(p.oGamma, px.r), u16(p.oGamma, px.g), u16(p.oGamma, px.b));
+
+    if ((p.flags & (F_CREATIVE | F_HUEVS)) == (F_CREATIVE | F_HUEVS)) {
+        vec3 hsl = rgbToHsv(vec3(px) / 65535.0);
+        float sat = untouchedSat(px);
+        int hue = min(int(hsl.x * 100.0), 35999);
+        hsl.z *= 1.0 + f32(p.oHueLuma, hue) * sat * 2.0;  if (hsl.z < 0.0) hsl.z = 0.0;
+        hsl.y *= 1.0 + f32(p.oHueSat, hue) * 2.0;         if (hsl.y < 0.0) hsl.y = 0.0;
+        hsl.x += 60.0 * f32(p.oHueHue, hue);
+        if (hsl.x < 0.0) hsl.x += 360.0; else if (hsl.x >= 360.0) hsl.x -= 360.0;
+        int luma = clamp(int(hsl.z * 36000.0), 0, 35999);
+        hsl.y *= 1.0 + f32(p.oLumaSat, luma) * 2.0;      if (hsl.y < 0.0) hsl.y = 0.0;
+        vec3 rgb = hsvToRgb(hsl);
+        px = uvec3(lim(rgb.r * 65535.0 + 0.5), lim(rgb.g * 65535.0 + 0.5), lim(rgb.b * 65535.0 + 0.5));
+    }
+    if ((p.flags & (F_CREATIVE | F_VIB)) == (F_CREATIVE | F_VIB)) {
+        int Y1 = (int(px.r << 2) + int(px.g) * 11 + int(px.b)) >> 4;
+        int Y2 = Y1 - 65536;
+        int v0 = i32(p.oVib, int(px.r) - Y2) + Y1, v1 = i32(p.oVib, int(px.g) - Y2) + Y1, v2 = i32(p.oVib, int(px.b) - Y2) + Y1;
+        if ((p.flags & F_VIB_POS) != 0) {
+            float sat = untouchedSat(px);
+            px = uvec3(lim(float(px.r) * sat + float(v0) * (1.0 - sat)), lim(float(px.g) * sat + float(v1) * (1.0 - sat)),
+                       lim(float(px.b) * sat + float(v2) * (1.0 - sat)));
+        } else {
+            px = uvec3(limi(v0), limi(v1), limi(v2));
+        }
+    }
+    if ((p.flags & (F_CREATIVE | F_SAT)) == (F_CREATIVE | F_SAT)) {
+        int Y1 = (int(px.r << 2) + int(px.g) * 11 + int(px.b)) >> 4;
+        int Y2 = Y1 - 65536;
+        px = uvec3(limi(i32(p.oSat, int(px.r) - Y2) + Y1), limi(i32(p.oSat, int(px.g) - Y2) + Y1), limi(i32(p.oSat, int(px.b) - Y2) + Y1));
+    }
+    if ((p.flags & (F_CREATIVE | F_TONING)) == (F_CREATIVE | F_TONING)) {
+        vec3 f = vec3(px);
+        px = uvec3(lim(f.r * p.toningDry + f.r * p.toningWet.r), lim(f.g * p.toningDry + f.g * p.toningWet.g),
+                   lim(f.b * p.toningDry + f.b * p.toningWet.b));
+    }
+    if ((p.flags & F_CREATIVE) != 0) {
+        // Contrast curve, luma gradation, RGB gradation (composed).
+        px = uvec3(u16(p.oOutR, px.r), u16(p.oOutG, px.g), u16(p.oOutB, px.b));
+    }
+    if ((p.flags & F_AGX) != 0) {
+        vec3 f = vec3(px);
+        px = uvec3(lim(dot(p.agxInv[0].xyz, f)), lim(dot(p.agxInv[1].xyz, f)), lim(dot(p.agxInv[2].xyz, f)));
+    }
+    dst[xy.y * p.width + xy.x] = uvec2(px.r | (px.g << 16), px.b);
+}

@@ -18,15 +18,17 @@ import kotlin.math.*
 class ProjectInstrumentation : Instrumentation() {
     private var headless = false
     private var main10HighRes = false
+    private var gpuParity = false
     override fun onCreate(arguments: Bundle?) {
         headless = arguments?.getString("headless") == "true"
         main10HighRes = arguments?.getString("main10hires") == "true"
+        gpuParity = arguments?.getString("gpuparity") == "true"
         super.onCreate(arguments); start()
     }
     private fun report(text: String) { sendStatus(0, Bundle().apply { putString("stream", text + "\n") }) }
     override fun onStart() {
         try {
-            runBlocking { if (main10HighRes) verifyMain10HighRes() else verify() }
+            runBlocking { if (gpuParity) verifyGpuParity() else if (main10HighRes) verifyMain10HighRes() else verify() }
             finish(Activity.RESULT_OK, Bundle().apply { putString("stream", "PASS: project/RAW/video/audio/CinemaDNG integration\n") })
         } catch (failure: Throwable) {
             finish(Activity.RESULT_CANCELED, Bundle().apply { putString("stream", failure.stackTraceToString()) })
@@ -163,6 +165,75 @@ class ProjectInstrumentation : Instrumentation() {
         expected.forEach { it.recycle() }
         File(context.filesDir, "projects/${project.id}.json").delete()
         report("Review artifacts: ${dir.path}")
+    }
+    /**
+     * Vulkan MLV-App grade vs MLV-App's own CPU code (-e gpuparity true): the
+     * same RCD frame through both, each per-pixel stage alone and all together.
+     * Reports max / mean |diff| in 16-bit units over the processed RGB16.
+     */
+    private suspend fun verifyGpuParity() {
+        val context = targetContext
+        val root = context.getSharedPreferences("gallery", 0).getString("tree", null) ?: error("Choose a source folder in the library first")
+        val take = listTakes(context, Uri.parse(root)).firstOrNull { t -> CrawClip.open(context, t.uri)?.use { !it.info.rgb } == true }
+            ?: error("Test requires a Bayer take")
+        val raw = ProjectMedia.importRaw(context, take.uri).copy(hasAudio = false)
+        val base = SequenceProject(name = "GPU parity", width = raw.width and 1.inv(), height = raw.height and 1.inv()).append(raw)
+        val hue = Curve(listOf(0f, 0.3f, 0.6f, 1f), listOf(0f, 0.4f, -0.3f, 0f))
+        val gcurve = Curve(listOf(0.00001f, 0.3f, 0.7f, 1f), listOf(0.00001f, 0.25f, 0.8f, 1f))
+        val cases = linkedMapOf(
+            "defaults" to Receipt(),
+            "exposure +1" to Receipt(exposure = 100),
+            "exposure -2.5" to Receipt(exposure = -250),
+            "contrast +40" to Receipt(contrast = 40),
+            "contrast -60" to Receipt(contrast = -60),
+            "white balance 3200 K, tint +30" to Receipt(temperature = 3200, tint = 30),
+            "vibrance +60" to Receipt(vibrance = 60),
+            "vibrance -50" to Receipt(vibrance = -50),
+            "saturation +40" to Receipt(saturation = 40),
+            "saturation -100" to Receipt(saturation = -100),
+            "dark/light strength" to Receipt(ds = 70, dr = 30, ls = 60, lr = 80, lightening = 40),
+            "highlight reconstruction" to Receipt(exposure = 200, highlightReconstruction = true),
+            "vignette -60" to Receipt(vignetteStrength = -60, vignetteRadius = 50, vignetteShape = 30),
+            "toning" to Receipt(tone = 40, toningStrength = 60),
+            "gradation curves" to Receipt(gradation = listOf(gcurve, gcurve, Curve.GRADATION_IDENTITY, gcurve)),
+            "hue-vs curves" to Receipt(hueVs = List(4) { hue }),
+            "profile Film, AgX off" to Receipt(profile = 3, agx = false),
+            "profile Log-C" to Receipt(profile = 4),
+            "camera matrix off" to Receipt(camMatrixUsed = 0),
+            "EXR mode" to Receipt(exrMode = true),
+            "creative off" to Receipt(contrast = 40, saturation = 40, creativeAdjustments = false),
+        )
+        val all = Receipt(exposure = 80, contrast = 25, temperature = 4800, tint = -12, vibrance = 30, saturation = 20,
+            ds = 50, ls = 30, lightening = 20, highlightReconstruction = true, vignetteStrength = 30, tone = 150, toningStrength = 20,
+            gradation = listOf(gcurve, Curve.GRADATION_IDENTITY, gcurve, Curve.GRADATION_IDENTITY), hueVs = List(4) { hue })
+        cases["all together"] = all
+        // Leave-one-out around "all together" (stage interactions).
+        cases["all - exposure"] = all.copy(exposure = 0)
+        cases["all - contrast"] = all.copy(contrast = 0)
+        cases["all - white balance"] = all.copy(temperature = -1, tint = 0)
+        cases["all - vibrance"] = all.copy(vibrance = 0)
+        cases["all - saturation"] = all.copy(saturation = 0)
+        cases["all - dark/light"] = all.copy(ds = 20, ls = 0, lightening = 0)
+        cases["all - highlight reconstruction"] = all.copy(highlightReconstruction = false)
+        cases["all - vignette"] = all.copy(vignetteStrength = 0)
+        cases["all - toning"] = all.copy(toningStrength = 0)
+        cases["all - gradation"] = all.copy(gradation = Receipt().gradation)
+        cases["all - hue-vs"] = all.copy(hueVs = Receipt().hueVs)
+        val failures = mutableListOf<String>()
+        ProjectFrameRenderer(context).use { r ->
+            for ((name, receipt) in cases) {
+                val project = base.copy(clips = base.clips.map { it.copy(receipt = receipt) })
+                val d = r.gpuParity(project, 0) ?: error("$name: the Vulkan path did not run")
+                val mean = d[3].toDouble() / (d[2] * 3)
+                report("%-32s max %5d  mean %.4f  differing pixels %.3f%%   worst #%d in %s cpu %s gpu %s".format(name, d[0], mean,
+                    100.0 * d[1] / d[2], d[4], d.slice(5..7), d.slice(8..10), d.slice(11..13)))
+                // fp32 shader vs MLV-App's double steps (Mali has no fp64): rounding
+                // differences near integer boundaries, magnified by steep gamma near
+                // black. A porting bug shows up as large mean / many pixels instead.
+                if (d[0] > 256 || mean > 0.05 || d[1] * 50 > d[2]) failures += "$name: max ${d[0]}, mean %.4f".format(mean)
+            }
+        }
+        check(failures.isEmpty()) { "Vulkan grade differs from MLV-App's CPU code: $failures" }
     }
     /**
      * HEVC Main10 at high resolution (-e main10hires true): a full-resolution

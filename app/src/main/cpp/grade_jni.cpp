@@ -6,6 +6,7 @@
 // RGB (RawLens Packed RCD output, normalised 0..1 in half floats).
 #include <jni.h>
 #include "p010_output.h"
+#include "mlv_gpu.h"
 #include <android/bitmap.h>
 #include <android/hardware_buffer.h>
 #include <android/hardware_buffer_jni.h>
@@ -54,6 +55,58 @@ inline float half2float(uint16_t h) {
     _Float16 f;
     std::memcpy(&f, &h, 2);
     return static_cast<float>(f);
+}
+
+// The RCD output as MLV-App input: half float * 65535 + 0.5, clamped.
+bool readRcd(AHardwareBuffer* hb, int w, int hh, std::vector<uint16_t>& in) {
+    AHardwareBuffer_Desc d{};
+    AHardwareBuffer_describe(hb, &d);
+    in.resize(size_t(w) * hh * 3);
+    void* src = nullptr;
+    if (AHardwareBuffer_lock(hb, AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN, -1, nullptr, &src) != 0) return false;
+    for (int y = 0; y < hh; ++y) {
+        const uint16_t* s = static_cast<const uint16_t*>(src) + size_t(y) * d.stride * 4;
+        uint16_t* o = in.data() + size_t(y) * w * 3;
+        for (int x = 0; x < w; ++x)
+            for (int c = 0; c < 3; ++c)
+                o[x * 3 + c] = static_cast<uint16_t>(std::clamp(half2float(s[x * 4 + c]) * 65535.0f + 0.5f, 0.0f, 65535.0f));
+    }
+    AHardwareBuffer_unlock(hb, nullptr);
+    return true;
+}
+
+// One Vulkan engine for MLV-App's grade, shared by all clips (serialised).
+const std::vector<uint32_t> kGradeSpv = {
+#include "mlv_grade.spv.inc"
+};
+const std::vector<uint32_t> kOutputSpv = {
+#include "mlv_output.spv.inc"
+};
+std::mutex gpuMutex;
+mlvgpu::Engine* gpuEngine() {
+    static mlvgpu::Engine* engine = [] {
+        auto* e = new mlvgpu::Engine;
+        const std::string error = e->init(kGradeSpv, kOutputSpv);
+        if (error.empty()) return e;
+        __android_log_print(ANDROID_LOG_WARN, "MlvGrade", "Vulkan grade unavailable: %s", error.c_str());
+        delete e;
+        return static_cast<mlvgpu::Engine*>(nullptr);
+    }();
+    return engine;
+}
+
+// Runs the Vulkan grade for g's settings; null when the CPU path is needed.
+mlvgpu::Engine* gpuRun(Grade* g, AHardwareBuffer* hb, int outW, int outH, bool rgba) {
+    if (!mlvgpu::supports(g->p)) return nullptr;
+    mlvgpu::Engine* e = gpuEngine();
+    if (!e) return nullptr;
+    AHardwareBuffer_Desc d{};
+    AHardwareBuffer_describe(hb, &d);
+    ensureSize(g, int(d.width), int(d.height));
+    const std::string error = e->run(g->p, hb, int(d.width), int(d.height), outW, outH, rgba);
+    if (error.empty()) return e;
+    __android_log_print(ANDROID_LOG_WARN, "MlvGrade", "Vulkan grade: %s", error.c_str());
+    return nullptr;
 }
 
 }  // namespace
@@ -251,18 +304,8 @@ Java_com_matthew_crs_MlvGrade_nativeRender(JNIEnv* env, jclass, jlong h, jobject
     const int w = static_cast<int>(std::min(d.width, bi.width)), hh = static_cast<int>(std::min(d.height, bi.height));
     std::lock_guard<std::mutex> l(g->mutex);
     ensureSize(g, w, hh);
-    g->in.resize(size_t(w) * hh * 3);
+    if (!readRcd(hb, w, hh, g->in)) return -2;
     g->out.resize(g->in.size());
-    void* src = nullptr;
-    if (AHardwareBuffer_lock(hb, AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN, -1, nullptr, &src) != 0) return -2;
-    for (int y = 0; y < hh; ++y) {
-        const uint16_t* s = static_cast<const uint16_t*>(src) + size_t(y) * d.stride * 4;
-        uint16_t* o = g->in.data() + size_t(y) * w * 3;
-        for (int x = 0; x < w; ++x)
-            for (int c = 0; c < 3; ++c)
-                o[x * 3 + c] = static_cast<uint16_t>(std::clamp(half2float(s[x * 4 + c]) * 65535.0f + 0.5f, 0.0f, 65535.0f));
-    }
-    AHardwareBuffer_unlock(hb, nullptr);
     static const int threads = static_cast<int>(std::max(1u, std::thread::hardware_concurrency()));
     applyProcessingObject(g->p, w, hh, g->in.data(), g->out.data(), threads, 1, 0);
     void* pixels = nullptr;
@@ -288,6 +331,86 @@ Java_com_matthew_crs_MlvGrade_nativeWriteP010(JNIEnv* env, jclass, jlong h, jobj
     std::lock_guard<std::mutex> lock(g->mutex);
     if(g->out.size()!=size_t(g->w)*g->h*3)return -2;
     return rgb16ToP010(env,image,g->out.data(),g->w,g->h,w,hh);
+}
+
+// MLV-App's grade on Vulkan: RCD output -> fitted P010 in a MediaCodec input
+// Image. 1 = settings need the CPU path, 0 = done, negative = failure.
+JNIEXPORT jint JNICALL
+Java_com_matthew_crs_MlvGrade_nativeGpuWriteP010(JNIEnv* env, jclass, jlong h, jobject rgbF16, jobject image, jint w, jint hh) {
+    auto* g = from(h);
+    AHardwareBuffer* hb = AHardwareBuffer_fromHardwareBuffer(env, rgbF16);
+    if (!g || !hb) return -1;
+    std::lock_guard<std::mutex> l(g->mutex);
+    std::lock_guard<std::mutex> gl(gpuMutex);
+    mlvgpu::Engine* e = gpuRun(g, hb, w, hh, false);
+    if (!e) return 1;
+    return p010PlanesToImage(env, image, e->lumaPlane(), e->chromaPlane(), w, hh);
+}
+
+// nativeRender on Vulkan (RGBA8 bitmap, fitted). 1 = CPU path needed.
+JNIEXPORT jint JNICALL
+Java_com_matthew_crs_MlvGrade_nativeGpuRender(JNIEnv* env, jclass, jlong h, jobject rgbF16, jobject bitmap) {
+    auto* g = from(h);
+    AHardwareBuffer* hb = AHardwareBuffer_fromHardwareBuffer(env, rgbF16);
+    AndroidBitmapInfo bi;
+    if (!g || !hb || AndroidBitmap_getInfo(env, bitmap, &bi) != ANDROID_BITMAP_RESULT_SUCCESS) return -1;
+    const int w = int(bi.width), hh = int(bi.height);
+    if ((w & 1) || (hh & 1)) return 1;
+    std::lock_guard<std::mutex> l(g->mutex);
+    std::lock_guard<std::mutex> gl(gpuMutex);
+    mlvgpu::Engine* e = gpuRun(g, hb, w, hh, true);
+    if (!e) return 1;
+    void* pixels = nullptr;
+    if (AndroidBitmap_lockPixels(env, bitmap, &pixels) != ANDROID_BITMAP_RESULT_SUCCESS) return -3;
+    for (int y = 0; y < hh; ++y)
+        std::memcpy(static_cast<uint8_t*>(pixels) + size_t(y) * bi.stride, e->rgba() + size_t(y) * w * 4, size_t(w) * 4);
+    AndroidBitmap_unlockPixels(env, bitmap);
+    return 0;
+}
+
+// Parity probe: MLV-App's applyProcessingObject (CPU) and the Vulkan shader on
+// the same RCD frame. {max |diff|, pixels differing, pixels, sum |diff|} over
+// processed RGB16; null when the GPU path cannot run these settings.
+JNIEXPORT jlongArray JNICALL
+Java_com_matthew_crs_MlvGrade_nativeGpuParity(JNIEnv* env, jclass, jlong h, jobject rgbF16) {
+    auto* g = from(h);
+    AHardwareBuffer* hb = AHardwareBuffer_fromHardwareBuffer(env, rgbF16);
+    if (!g || !hb) return nullptr;
+    AHardwareBuffer_Desc d{};
+    AHardwareBuffer_describe(hb, &d);
+    const int w = int(d.width), hh = int(d.height);
+    std::lock_guard<std::mutex> l(g->mutex);
+    std::lock_guard<std::mutex> gl(gpuMutex);
+    mlvgpu::Engine* e = gpuRun(g, hb, w & ~1, hh & ~1, false);
+    if (!e || !readRcd(hb, w, hh, g->in)) return nullptr;
+    const std::vector<uint32_t> gpu = e->readProcessed();
+    g->out.resize(g->in.size());
+    applyProcessingObject(g->p, w, hh, g->in.data(), g->out.data(), 1, 1, 0);
+    if (gpu.size() != size_t(w) * hh * 2) return nullptr;
+    // + the worst pixel: index, input RGB, CPU RGB, GPU RGB.
+    jlong result[14] = {0, 0, jlong(w) * hh, 0};
+    for (size_t i = 0; i < size_t(w) * hh; ++i) {
+        const jlong v[3] = {jlong(gpu[i * 2] & 0xffffu), jlong(gpu[i * 2] >> 16), jlong(gpu[i * 2 + 1] & 0xffffu)};
+        jlong worst = 0;
+        for (int c = 0; c < 3; ++c) {
+            const jlong diff = std::abs(v[c] - jlong(g->out[i * 3 + c]));
+            worst = std::max(worst, diff);
+            result[3] += diff;
+        }
+        if (worst > result[0]) {
+            result[4] = jlong(i);
+            for (int c = 0; c < 3; ++c) {
+                result[5 + c] = g->in[i * 3 + c];
+                result[8 + c] = g->out[i * 3 + c];
+                result[11 + c] = v[c];
+            }
+        }
+        result[0] = std::max(result[0], worst);
+        if (worst) ++result[1];
+    }
+    jlongArray out = env->NewLongArray(14);
+    env->SetLongArrayRegion(out, 0, 14, result);
+    return out;
 }
 
 }  // extern "C"
