@@ -1114,7 +1114,7 @@ void apply_processing_object( processingObject_t * processing,
             if( hsl[0] < 0 ) hsl[0] += 360;
             else if( hsl[0] >= 360 ) hsl[0] -= 360;
 
-            uint16_t luma = (uint16_t)((hsl[2]) * 36000.0);
+            uint16_t luma = (uint16_t)MIN((hsl[2]) * 36000.0, 35999.0);
             hsl[1] *= 1.0 + (processing->luma_vs_saturation[luma] * 2);
             if( hsl[1] < 0.0 ) hsl[1] = 0.0;
 

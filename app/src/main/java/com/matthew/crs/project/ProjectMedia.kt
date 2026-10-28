@@ -95,19 +95,7 @@ class ProjectFrameRenderer(private val context: Context) : AutoCloseable {
         val out = outputs[next]; next = 1 - next
         val canvas = Canvas(out); canvas.drawColor(Color.BLACK)
         val sample = SequenceSchedule(project).videoAt(project.rate.time(frame)) ?: return out
-        if (assetId != sample.asset.id) {
-            closeSource()
-            val source = CrawClip.open(context, Uri.parse(sample.asset.uri))
-                ?: error("Missing source: ${sample.asset.name}. Relink it in the clip inspector.")
-            clip = source
-            assetId = sample.asset.id
-            if (!source.info.rgb && GpuPipeline.init(context)) {
-                gpu = GpuFrameRenderer(source, source.info.width, source.info.height)
-                grade = MlvGrade(source)
-            } else cpu = source.newPreviewBitmap()
-        }
-        val source = clip!!
-        source.setRawTools(sample.clip.receipt.rawToolValues())
+        val source = open(sample)
         val g = gpu; val developer = grade
         val bitmap = if (g != null && developer != null) {
             g.renderGraded(sample.sourceFrame, developer) { sample.clip.receipt }
@@ -121,17 +109,42 @@ class ProjectFrameRenderer(private val context: Context) : AutoCloseable {
             (project.width + width) / 2, (project.height + height) / 2), paint)
         return out
     }
-    /** Uses native RGB16 scratch, never the ARGB preview, for Main10 delivery. */
+    private fun open(sample: VideoSample): CrawClip {
+        if (assetId != sample.asset.id) {
+            closeSource()
+            val source = CrawClip.open(context, Uri.parse(sample.asset.uri))
+                ?: error("Missing source: ${sample.asset.name}. Relink it in the clip inspector.")
+            clip = source
+            assetId = sample.asset.id
+            if (!source.info.rgb && GpuPipeline.init(context)) {
+                gpu = GpuFrameRenderer(source, source.info.width, source.info.height)
+                grade = MlvGrade(source)
+            } else cpu = source.newPreviewBitmap()
+        }
+        return clip!!.also { it.setRawTools(sample.clip.receipt.rawToolValues()) }
+    }
+    /** Processed RGB16 straight to the encoder's P010 planes, never through the ARGB preview. */
     fun renderP010(project: SequenceProject, frame: Long, image: android.media.Image) {
         val sample = SequenceSchedule(project).videoAt(project.rate.time(frame))
         if (sample == null) {
             check(P010Output.black(image, project.width, project.height)) { "Encoder did not expose writable P010 planes" }
             return
         }
-        render(project, frame)
-        val ok = grade?.writeProcessedP010(image, project.width, project.height)
-            ?: clip!!.writeDevelopedP010(image, project.width, project.height)
-        check(ok) { "Cannot convert processed RGB16 to the encoder’s P010 planes" }
+        val source = open(sample)
+        val g = gpu; val developer = grade
+        val ok = if (g != null && developer != null) {
+            g.writeGradedP010(sample.sourceFrame, developer, { sample.clip.receipt }, image, project.width, project.height)
+        } else {
+            render(project, frame)
+            source.writeDevelopedP010(image, project.width, project.height)
+        }
+        check(ok) { "Cannot write frame ${sample.sourceFrame + 1} of ${sample.asset.name} to the encoder’s P010 planes" }
+    }
+    /** Vulkan grade vs MLV-App's CPU code on one frame (parity tests). */
+    fun gpuParity(project: SequenceProject, frame: Long): LongArray? {
+        val sample = SequenceSchedule(project).videoAt(project.rate.time(frame)) ?: return null
+        open(sample)
+        return gpu?.gpuParity(sample.sourceFrame, grade ?: return null) { sample.clip.receipt }
     }
     val asShotKelvin: Double? get() = grade?.asShot?.first
     private fun closeSource() {
