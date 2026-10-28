@@ -5,7 +5,8 @@
 // bilinear, then limited-range BT.709 P010 (Y per pixel, CbCr from the 2x2
 // average) for MediaCodec and RGBA8 for display. Same formulas as the CPU
 // writer (p010_output.h). One invocation per 2x2 output block.
-layout(local_size_x = 16, local_size_y = 16) in;
+// 16 x 8 = 128 invocations: the minimum every Vulkan device supports.
+layout(local_size_x = 16, local_size_y = 8) in;
 
 layout(std430, binding = 0) readonly buffer Src { uvec2 src[]; };
 layout(std430, binding = 1) writeonly buffer Luma { uint y[]; };     // 2 x 16-bit per uint
