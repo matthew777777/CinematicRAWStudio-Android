@@ -25,10 +25,28 @@ object GpuPipeline {
     @Volatile private var state: Int = -1  // -1 untried, 0 ok, >0 VfVulkan error
 
     val ready: Boolean get() = state == 0
+    private var appContext: Context? = null
+    private var fusedMode = true
+
+    /**
+     * Packed RCD runs either fused with the grade into P010 (playback) or to
+     * camera RGB for MLV-App processing (editing). Switching re-creates the
+     * RCD pipelines (~0.2 s), so it happens only on play/pause.
+     */
+    @Synchronized
+    fun ensureRcdMode(fused: Boolean): Boolean {
+        if (fusedMode == fused) return true
+        val c = appContext ?: return false
+        val ok = VfPackedRcd.init(c, fused = fused) == VfVulkan.OK
+        if (ok) fusedMode = fused
+        Log.i("GpuPipeline", "Packed RCD mode ${if (fused) "fused P010" else "camera RGB"}: $ok")
+        return ok
+    }
 
     @Synchronized
     fun init(context: Context): Boolean {
         if (state >= 0) return state == 0
+        appContext = context.applicationContext
         state = try {
             fun spv(path: String) = context.assets.open(path).use { it.readBytes() }
             when {
@@ -113,6 +131,7 @@ class GpuFrameRenderer(private val clip: CrawClip, width: Int, height: Int) : Au
      *  [fullRes] plays at full resolution instead of the half-size proxy. */
     fun startPlayback(start: Int, frames: Int, fullRes: Boolean = false, due: () -> Int) {
         stopPlayback()
+        GpuPipeline.ensureRcdMode(fused = true)
         playing = true
         cursor.set(start)
         repeat(DECODERS) {
@@ -161,8 +180,44 @@ class GpuFrameRenderer(private val clip: CrawClip, width: Int, height: Int) : Au
         while (true) { val e = ready.pollFirstEntry() ?: break; free.add(e.value) }
     }
 
+    private var rgbF16: HardwareBuffer? = null
+    private val graded = arrayOfNulls<Bitmap>(2)
+    private var gradedNext = 0
+
+    /**
+     * Frame [index] at full resolution through MLV-App's processing (vendored
+     * MLV-App code): Packed RCD to camera RGB, then [grade]. For paused frames;
+     * playback uses the fused GPU grade.
+     */
+    fun renderGraded(index: Int, grade: MlvGrade, settings: (asShot: Pair<Double, Double>) -> GradeSettings): Bitmap? {
+        if (!GpuPipeline.ensureRcdMode(fused = false)) return null
+        val slot = decode(index, false) ?: return null
+        try {
+            val f = slot.params ?: return null
+            val asShot = grade.asShot ?: grade.findAsShot(f.neutral)
+            grade.apply(settings(asShot))
+            val buf = rgbF16 ?: HardwareBuffer.create(w, h, HardwareBuffer.RGBA_FP16, 1,
+                HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE or HardwareBuffer.USAGE_GPU_DATA_BUFFER or
+                    HardwareBuffer.USAGE_GPU_COLOR_OUTPUT or HardwareBuffer.USAGE_CPU_READ_OFTEN).also { rgbF16 = it }
+            val pattern = BayerPattern.entries[f.cfa.coerceIn(0, 3)]
+            val (ip, fp) = VfRcd.packRcd(w, h, 0, 0, VfRcd.channelsFromPattern(pattern), f.width, 0, f.black, f.white)
+            val t0 = System.nanoTime()
+            val rc = VfPackedRcd.processNative(slot.blob, buf, ip, fp)
+            if (rc != VfVulkan.OK) { Log.w("GpuFrameRenderer", "RCD failed: ${VfVulkan.describe(rc)}"); return null }
+            val t1 = System.nanoTime()
+            val out = graded[gradedNext] ?: Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also { graded[gradedNext] = it }
+            if (!grade.render(buf, out)) return null
+            Log.i("GpuFrameRenderer", "graded $index: rcd %.1f ms, MLV-App %.1f ms".format((t1 - t0) / 1e6, (System.nanoTime() - t1) / 1e6))
+            gradedNext = 1 - gradedNext
+            return out
+        } finally {
+            free.add(slot)
+        }
+    }
+
     /** Hardware Bitmap of frame [index]: half-size proxy while playing, else full resolution. */
     fun render(index: Int, exposureEv: Float, playing: Boolean = false): Bitmap? {
+        GpuPipeline.ensureRcdMode(fused = true)
         val t0 = System.nanoTime()
         val slot = decode(index, playing) ?: return null
         try {
@@ -207,6 +262,7 @@ class GpuFrameRenderer(private val clip: CrawClip, width: Int, height: Int) : Au
         decoders.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS)
         slots.forEach { it.blob.close() }
         full.close(); half.close()
+        rgbF16?.close()
     }
 }
 

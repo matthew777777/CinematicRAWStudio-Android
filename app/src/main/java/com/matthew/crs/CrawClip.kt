@@ -65,6 +65,10 @@ class CrawClip private constructor(private var handle: Long) : Closeable {
     fun ccm(neutral: FloatArray): FloatArray? =
         if (handle == 0L) null else nativeCcm(handle, neutral[0], neutral[1], neutral[2])
 
+    /** XYZ->camera matrices (daylight, tungsten) for MLV-App; null if the take has none. */
+    fun camMatrices(): Pair<DoubleArray, DoubleArray>? =
+        if (handle == 0L) null else nativeCamMatrices(handle)?.let { it.copyOfRange(0, 9) to it.copyOfRange(9, 18) }
+
     /** Reads take WAV bytes at [offset] into [dst]; returns the count (<= 0 at the end). */
     fun readWav(offset: Long, dst: ByteArray, length: Int = dst.size): Int =
         if (handle == 0L) -1 else nativeReadWav(handle, offset, dst, length)
@@ -110,6 +114,7 @@ class CrawClip private constructor(private var handle: Long) : Closeable {
         @JvmStatic private external fun nativeRender(handle: Long, index: Int, bitmap: Bitmap, exposureEv: Float): Int
         @JvmStatic private external fun nativeDecodeToBlob(handle: Long, index: Int, blob: android.hardware.HardwareBuffer, half: Boolean, threads: Int): FloatArray?
         @JvmStatic private external fun nativeCcm(handle: Long, nr: Float, ng: Float, nb: Float): FloatArray?
+        @JvmStatic private external fun nativeCamMatrices(handle: Long): DoubleArray?
         @JvmStatic private external fun nativeReadWav(handle: Long, offset: Long, dst: ByteArray, length: Int): Int
     }
 }
