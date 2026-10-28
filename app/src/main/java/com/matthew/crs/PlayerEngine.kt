@@ -78,6 +78,7 @@ class PlayerEngine(private val clip: CrawClip, private val gpu: GpuFrameRenderer
     fun show(i: Int) {
         val target = i.coerceIn(0, maxOf(info.frames - 1, 0))
         val t0 = SystemClock.elapsedRealtime()
+        clip.setRawTools(receipt.rawToolValues())
         if (gpu != null && grade != null && !playing) {
             val bmp = gpu.renderGraded(target, grade) { receipt }
             if (bmp != null) { frame = bmp; index = target }
@@ -101,7 +102,7 @@ class PlayerEngine(private val clip: CrawClip, private val gpu: GpuFrameRenderer
     }
 
     fun play() {
-        if (playing || info.frames == 0) return
+        if (playing || info.frames == 0 || com.matthew.crs.project.ExportQueue.running) return
         if (index >= info.frames - 1) show(0)
         playing = true
         startSeconds = index / info.fps

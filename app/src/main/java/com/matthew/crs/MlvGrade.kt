@@ -61,11 +61,22 @@ data class Receipt(
     val vignetteShape: Int = 0,        // 0..100      -> v/100
     val tone: Int = 0,                 // 0..255 hue  -> Qt HSL(v/255, 1, 0.5)
     val toningStrength: Int = 0,       // 0..100
+    // RAW correction (llrawproc; ReceiptSettings.cpp defaults).
+    val rawFixesEnabled: Boolean = true,
+    val verticalStripes: Int = 0,      // 0 off, 1 normal, 2 force (MLV-App: on by default only for the 5D3)
+    val badPixels: Int = 0,            // 0 off, 1 auto, 2 force
+    val bpsMethod: Int = 0,            // 0 normal, 1 aggressive
+    val bpiMethod: Int = 0,
+    val chromaSmooth: Int = 0,         // 0 off, 1 2x2, 2 3x3, 3 5x5
+    val patternNoise: Int = 0,         // 0 off, 1 on
     /** Gradation curves: 0 luma, 1 red, 2 green, 3 blue (processingSetGCurve). */
     val gradation: List<Curve> = List(4) { Curve.GRADATION_IDENTITY },
     /** 0 hue vs hue, 1 hue vs saturation, 2 hue vs luma, 3 luma vs saturation (processingSetHueVsCurves). */
     val hueVs: List<Curve> = List(4) { Curve.HUE_IDENTITY },
 ) {
+    fun rawToolValues(): IntArray = intArrayOf(if (rawFixesEnabled) 1 else 0, verticalStripes, badPixels, bpsMethod,
+        bpiMethod, chromaSmooth, patternNoise)
+
     fun toJson(): String = org.json.JSONObject().apply {
         for ((k, get, _) in INTS) put(k, get(this@Receipt))
         for ((k, get, _) in BOOLS) put(k, get(this@Receipt))
@@ -111,6 +122,12 @@ data class Receipt(
             Triple("vignetteShape", { it.vignetteShape }, { r, v -> r.copy(vignetteShape = v) }),
             Triple("tone", { it.tone }, { r, v -> r.copy(tone = v) }),
             Triple("toningStrength", { it.toningStrength }, { r, v -> r.copy(toningStrength = v) }),
+            Triple("verticalStripes", { it.verticalStripes }, { r, v -> r.copy(verticalStripes = v) }),
+            Triple("badPixels", { it.badPixels }, { r, v -> r.copy(badPixels = v) }),
+            Triple("bpsMethod", { it.bpsMethod }, { r, v -> r.copy(bpsMethod = v) }),
+            Triple("bpiMethod", { it.bpiMethod }, { r, v -> r.copy(bpiMethod = v) }),
+            Triple("chromaSmooth", { it.chromaSmooth }, { r, v -> r.copy(chromaSmooth = v) }),
+            Triple("patternNoise", { it.patternNoise }, { r, v -> r.copy(patternNoise = v) }),
         )
         private val BOOLS: List<Triple<String, (Receipt) -> Boolean, (Receipt, Boolean) -> Receipt>> = listOf(
             Triple("highlightReconstruction", { it.highlightReconstruction }, { r, v -> r.copy(highlightReconstruction = v) }),
@@ -118,6 +135,7 @@ data class Receipt(
             Triple("creativeAdjustments", { it.creativeAdjustments }, { r, v -> r.copy(creativeAdjustments = v) }),
             Triple("exrMode", { it.exrMode }, { r, v -> r.copy(exrMode = v) }),
             Triple("agx", { it.agx }, { r, v -> r.copy(agx = v) }),
+            Triple("rawFixesEnabled", { it.rawFixesEnabled }, { r, v -> r.copy(rawFixesEnabled = v) }),
         )
 
         /** Receipt from [toJson]; missing keys keep MLV-App's defaults. */
@@ -246,6 +264,8 @@ class MlvGrade(clip: CrawClip) : Closeable {
     /** MLV-App processing of RCD camera RGB (RGBA16F) into [out] (same size). */
     fun render(rgbF16: HardwareBuffer, out: Bitmap): Boolean = handle != 0L && nativeRender(handle, rgbF16, out) == 0
 
+    fun writeProcessedP010(image: android.media.Image, width: Int, height: Int): Boolean = handle != 0L && nativeWriteP010(handle, image, width, height) == 0
+
     @Synchronized
     override fun close() {
         if (handle != 0L) { nativeFree(handle); handle = 0 }
@@ -264,6 +284,7 @@ class MlvGrade(clip: CrawClip) : Closeable {
             nativeInterpolate(kind, c.xs.toFloatArray(), c.ys.toFloatArray(), n)
 
         @JvmStatic private external fun nativeInterpolate(kind: Int, xs: FloatArray, ys: FloatArray, n: Int): FloatArray?
+        @JvmStatic private external fun nativeWriteP010(handle: Long, image: android.media.Image, width: Int, height: Int): Int
         @JvmStatic private external fun nativeRender(handle: Long, rgbF16: HardwareBuffer, out: Bitmap): Int
     }
 }

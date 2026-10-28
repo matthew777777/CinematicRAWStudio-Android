@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -28,19 +29,18 @@ import androidx.compose.ui.unit.sp
 fun CurveEditor(r: Receipt, onChange: (Receipt) -> Unit) {
     var hue by remember { mutableStateOf(false) }
     var channel by remember { mutableIntStateOf(0) }
-    Row {
+    FlowRow {
         FilterChip(selected = !hue, onClick = { hue = false; channel = 0 }, label = { Text("Gradation", fontSize = 12.sp) })
         Spacer(Modifier.width(6.dp))
         FilterChip(selected = hue, onClick = { hue = true; channel = 0 }, label = { Text("Hue vs", fontSize = 12.sp) })
-        Spacer(Modifier.weight(1f))
         TextButton(onClick = {
             onChange(if (hue) r.copy(hueVs = r.hueVs.toMutableList().also { it[channel] = Curve.HUE_IDENTITY })
                      else r.copy(gradation = r.gradation.toMutableList().also { it[channel] = Curve.GRADATION_IDENTITY }))
         }) { Text("Reset curve", fontSize = 12.sp) }
     }
     val names = if (hue) listOf("Hue/Hue", "Hue/Sat", "Hue/Luma", "Luma/Sat") else listOf("Luma", "Red", "Green", "Blue")
-    val colors = if (hue) List(4) { Color(0xFFE8A33D) } else listOf(Color.White, Color(0xFFE05050), Color(0xFF50C050), Color(0xFF5080F0))
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    val colors = if (hue) List(4) { MaterialTheme.colorScheme.primary } else listOf(Color.White, Color(0xFFE05050), Color(0xFF50C050), Color(0xFF5080F0))
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         names.forEachIndexed { i, n -> FilterChip(selected = channel == i, onClick = { channel = i }, label = { Text(n, fontSize = 11.sp) }) }
     }
     val curve = if (hue) r.hueVs[channel] else r.gradation[channel]

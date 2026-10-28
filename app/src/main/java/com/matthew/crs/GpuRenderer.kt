@@ -21,6 +21,8 @@ import com.matthew.rawlens.VfVulkan
  * BT.709 encode) into P010, then P010 -> RGBA8 for display. The same P010
  * feeds MediaCodec at export, as in Direct Log.
  */
+object RawRenderGate { val lock = Any() }
+
 object GpuPipeline {
     @Volatile private var state: Int = -1  // -1 untried, 0 ok, >0 VfVulkan error
 
@@ -131,7 +133,7 @@ class GpuFrameRenderer(private val clip: CrawClip, width: Int, height: Int) : Au
      *  [fullRes] plays at full resolution instead of the half-size proxy. */
     fun startPlayback(start: Int, frames: Int, fullRes: Boolean = false, due: () -> Int) {
         stopPlayback()
-        GpuPipeline.ensureRcdMode(fused = true)
+        synchronized(RawRenderGate.lock) { GpuPipeline.ensureRcdMode(fused = true) }
         playing = true
         cursor.set(start)
         repeat(DECODERS) {
@@ -190,6 +192,7 @@ class GpuFrameRenderer(private val clip: CrawClip, width: Int, height: Int) : Au
      * playback uses the fused GPU grade.
      */
     fun renderGraded(index: Int, grade: MlvGrade, receipt: () -> Receipt): Bitmap? {
+        synchronized(RawRenderGate.lock) {
         if (!GpuPipeline.ensureRcdMode(fused = false)) return null
         val slot = decode(index, false) ?: return null
         try {
@@ -213,10 +216,12 @@ class GpuFrameRenderer(private val clip: CrawClip, width: Int, height: Int) : Au
         } finally {
             free.add(slot)
         }
+        }
     }
 
     /** Hardware Bitmap of frame [index]: half-size proxy while playing, else full resolution. */
     fun render(index: Int, exposureEv: Float, playing: Boolean = false): Bitmap? {
+        synchronized(RawRenderGate.lock) {
         GpuPipeline.ensureRcdMode(fused = true)
         val t0 = System.nanoTime()
         val slot = decode(index, playing) ?: return null
@@ -229,9 +234,12 @@ class GpuFrameRenderer(private val clip: CrawClip, width: Int, height: Int) : Au
         } finally {
             free.add(slot)
         }
+        }
     }
 
     private fun gpu(slot: Slot, exposureEv: Float): Bitmap? {
+        synchronized(RawRenderGate.lock) {
+        GpuPipeline.ensureRcdMode(fused = true)
         val f = slot.params ?: return null
         val t = if (slot.half) half else full
         if (!f.neutral.contentEquals(ccmFor)) {
@@ -254,6 +262,7 @@ class GpuFrameRenderer(private val clip: CrawClip, width: Int, height: Int) : Au
         VfEglImport.closeSyncFd(fd)
         t.next = 1 - t.next
         return Bitmap.wrapHardwareBuffer(target, ColorSpace.get(ColorSpace.Named.SRGB))
+        }
     }
 
     override fun close() {

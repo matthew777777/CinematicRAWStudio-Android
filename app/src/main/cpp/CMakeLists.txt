@@ -12,14 +12,16 @@ add_library(mlvprocessing STATIC
     ${MLV}/processing/cafilter/ColorAberrationCorrection.c ${MLV}/processing/interpolation/cosine_interpolation.c
     ${MLV}/processing/tinyexpr/tinyexpr.c ${MLV}/processing/filter/filter.c ${MLV}/processing/filter/genann/genann.c
     ${MLV}/matrix/matrix.c ${MLV}/processing/rbfilter/rbf_wrapper.cpp ${MLV}/processing/rbfilter/RBFilterPlain.cpp
-    ${MLV}/processing/interpolation/spline_helper.cpp)
-target_include_directories(mlvprocessing PUBLIC ${MLV}/processing)
+    ${MLV}/processing/interpolation/spline_helper.cpp
+    ${MLV}/mlv/llrawproc/stripes.c ${MLV}/mlv/llrawproc/patternnoise.c ${MLV}/mlv/llrawproc/pixelproc.c)
+target_include_directories(mlvprocessing PUBLIC ${MLV}/processing ${MLV}/mlv)
 target_compile_options(mlvprocessing PRIVATE -O3 -ftree-vectorize -fno-math-errno -w -fopenmp)
 target_link_options(mlvprocessing PUBLIC -fopenmp -static-openmp)
 
 add_library(crs SHARED
     clip_jni.cpp
     grade_jni.cpp
+    raw_tools.cpp
     ${CRAW}/encoder/src/Encoder.cpp
     ${CRAW}/encoder/src/Writer.cpp
     ${CRAW}/decoder/src/Decoder.cpp
