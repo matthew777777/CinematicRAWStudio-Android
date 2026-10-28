@@ -18,6 +18,7 @@ import kotlin.math.roundToInt
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -121,14 +122,14 @@ fun EditorPanel(r: Receipt, asShotKelvin: Double?, onChange: (Receipt) -> Unit,
             EditTool.Color -> {
                 Section("White balance & color")
                 val kelvin = if (r.temperature < 0) (asShotKelvin ?: 6000.0).toInt() else r.temperature
-                Knob("Temperature", kelvin, 2000..10000, defaultValue = (asShotKelvin ?: 6000.0).toInt(), onReset = { onChange(r.copy(temperature = -1)) }, label = if (r.temperature < 0) "$kelvin K (as shot)" else "$kelvin K") {
+                Knob("Temperature", kelvin, 2000..10000, defaultValue = (asShotKelvin ?: 6000.0).toInt(), onReset = { onChange(r.copy(temperature = -1)) }, track = TEMPERATURE_TRACK, label = if (r.temperature < 0) "$kelvin K (as shot)" else "$kelvin K") {
                     onChange(r.copy(temperature = it))
                 }
-                Knob("Tint", r.tint, -100..100, defaultValue = Receipt().tint) { onChange(r.copy(tint = it, temperature = if (r.temperature < 0) kelvin else r.temperature)) }
-                Knob("Vibrance", r.vibrance, -100..100, defaultValue = Receipt().vibrance) { onChange(r.copy(vibrance = it)) }
-                Knob("Saturation", r.saturation, -100..100, defaultValue = Receipt().saturation) { onChange(r.copy(saturation = it)) }
+                Knob("Tint", r.tint, -100..100, defaultValue = Receipt().tint, track = TINT_TRACK) { onChange(r.copy(tint = it, temperature = if (r.temperature < 0) kelvin else r.temperature)) }
+                Knob("Vibrance", r.vibrance, -100..100, defaultValue = Receipt().vibrance, track = SATURATION_TRACK) { onChange(r.copy(vibrance = it)) }
+                Knob("Saturation", r.saturation, -100..100, defaultValue = Receipt().saturation, track = SATURATION_TRACK) { onChange(r.copy(saturation = it)) }
                 Section("Toning")
-                Knob("Tone", r.tone, 0..255, defaultValue = Receipt().tone) { onChange(r.copy(tone = it)) }
+                Knob("Tone", r.tone, 0..255, defaultValue = Receipt().tone, track = HUE_TRACK) { onChange(r.copy(tone = it)) }
                 Knob("Toning strength", r.toningStrength, 0..100, defaultValue = Receipt().toningStrength) { onChange(r.copy(toningStrength = it)) }
 
             }
@@ -201,27 +202,45 @@ private fun Section(title: String) {
         modifier = Modifier.padding(top = 14.dp, bottom = 2.dp))
 }
 
-/** Relative 1:1 drags avoid jumps; numeric entry and reset share receipt units. */
+// Track colours: what moving the control does to the picture.
+private val TEMPERATURE_TRACK = listOf(Color(0xFF3D7BD9), Color(0xFFDADADA), Color(0xFFE0A030))
+private val TINT_TRACK = listOf(Color(0xFF3FA34D), Color(0xFFDADADA), Color(0xFFC045B8))
+private val SATURATION_TRACK = listOf(Color(0xFF8A8A8A), Color(0xFFB0B0B0), Color(0xFFE04040), Color(0xFFE0C030), Color(0xFF3FA3E0))
+// Tone is Qt HSL(v / 255, 1, 0.5) in MLV-App: the full hue circle.
+private val HUE_TRACK = (0..6).map { Color.hsl(it * 60f % 360f, 1f, 0.5f) }
+
+/**
+ * A grading slider. Relative 1:1 drags avoid jumps; numeric entry and reset
+ * share receipt units. Layout after RapidRAW's slider (design only): name and
+ * value on one line, fill drawn from the default value, tap the name to reset,
+ * tap the value to type it; [track] colours the track (temperature, tint, hue).
+ */
 @Composable
 private fun Knob(name: String, value: Int, range: IntRange, defaultValue: Int = 0,
-    label: String = value.toString(), onReset: (() -> Unit)? = null, onValue: (Int) -> Unit) {
+    label: String = value.toString(), onReset: (() -> Unit)? = null, track: List<Color>? = null,
+    onValue: (Int) -> Unit) {
     var entry by remember { mutableStateOf(false) }
     val latestValue by rememberUpdatedState(value)
     val latestChange by rememberUpdatedState(onValue)
     val latestReset by rememberUpdatedState(onReset)
     val accent = MaterialTheme.colorScheme.primary
-    val trackColor = MaterialTheme.colorScheme.outline
-    Column(Modifier.fillMaxWidth()) {
+    val trackColor = MaterialTheme.colorScheme.outlineVariant
+    // Temperature resets to "as shot" (onReset); the others to their default.
+    val changed = if (onReset != null) !label.endsWith("(as shot)") else value != defaultValue
+    fun reset() { latestReset?.invoke() ?: latestChange(defaultValue.coerceIn(range)) }
+    Column(Modifier.fillMaxWidth().padding(top = 4.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(name, fontSize = 12.sp, modifier = Modifier.weight(1f))
+            Text(name, fontSize = 13.sp,
+                color = if (changed) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f).clickable(onClickLabel = "Reset $name") { reset() }.padding(vertical = 4.dp))
             Text(label, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
-                color = accent,
-                modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp))
+                color = if (changed) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.clip(RoundedCornerShape(4.dp))
                     .clickable(onClickLabel = "Set $name value") { entry = true }
                     .semantics { contentDescription = "Set $name value" }
-                    .padding(horizontal = 8.dp, vertical = 6.dp))
+                    .padding(horizontal = 6.dp, vertical = 4.dp))
         }
-        Canvas(Modifier.fillMaxWidth().height(48.dp)
+        Canvas(Modifier.fillMaxWidth().height(36.dp)
             .semantics {
                 contentDescription = "$name, $label"
                 progressBarRangeInfo = ProgressBarRangeInfo(value.toFloat(), range.first.toFloat()..range.last.toFloat())
@@ -230,9 +249,7 @@ private fun Knob(name: String, value: Int, range: IntRange, defaultValue: Int = 
                     latestReset?.invoke() ?: latestChange(defaultValue.coerceIn(range)); true
                 })
             }
-            .pointerInput(range, defaultValue) { detectTapGestures(onDoubleTap = {
-                latestReset?.invoke() ?: latestChange(defaultValue.coerceIn(range))
-            }) }
+            .pointerInput(range, defaultValue) { detectTapGestures(onDoubleTap = { reset() }) }
             // Horizontal drags only, so vertical swipes scroll the panel. The thumb
             // follows the finger 1:1, relative to where the drag started (no jump).
             .pointerInput(range) {
@@ -246,11 +263,22 @@ private fun Knob(name: String, value: Int, range: IntRange, defaultValue: Int = 
                 }
             }) {
             val left = 8.dp.toPx(); val right = size.width - left; val y = size.height / 2
-            val fraction = (value - range.first).toFloat() / (range.last - range.first)
-            val x = left + (right - left) * fraction.coerceIn(0f, 1f)
-            drawLine(trackColor, Offset(left, y), Offset(right, y), 3.dp.toPx(), StrokeCap.Round)
-            drawLine(accent, Offset(left, y), Offset(x, y), 3.dp.toPx(), StrokeCap.Round)
-            drawCircle(accent, 6.dp.toPx(), Offset(x, y))
+            fun at(v: Int) = left + (right - left) * ((v - range.first).toFloat() / (range.last - range.first)).coerceIn(0f, 1f)
+            val x = at(value)
+            val origin = at(defaultValue)
+            val stroke = 4.dp.toPx()
+            if (track != null) {
+                drawLine(androidx.compose.ui.graphics.Brush.horizontalGradient(track, left, right),
+                    Offset(left, y), Offset(right, y), stroke, StrokeCap.Round, alpha = 0.85f)
+            } else {
+                drawLine(trackColor, Offset(left, y), Offset(right, y), stroke, StrokeCap.Round)
+                // Fill from the default value, so a bipolar control grows from its centre.
+                if (x != origin) drawLine(accent, Offset(origin, y), Offset(x, y), stroke, StrokeCap.Round)
+            }
+            // Default-value tick.
+            drawLine(trackColor, Offset(origin, y - 7.dp.toPx()), Offset(origin, y + 7.dp.toPx()), 1.5.dp.toPx())
+            drawCircle(Color.White, 8.dp.toPx(), Offset(x, y))
+            drawCircle(if (track != null) Color(0xFF202124) else accent, 5.dp.toPx(), Offset(x, y))
         }
     }
     if (entry) {

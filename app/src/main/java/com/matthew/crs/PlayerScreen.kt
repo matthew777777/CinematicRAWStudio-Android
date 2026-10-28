@@ -4,6 +4,11 @@ package com.matthew.crs
 import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -126,10 +131,10 @@ fun PlayerScreen(uri: Uri, onBack: () -> Unit) {
     // the newest receipt (values that went stale during a render are skipped).
     LaunchedEffect(e) {
         val player = e ?: return@LaunchedEffect
-        androidx.compose.runtime.snapshotFlow { player.receipt to player.playing }
+        androidx.compose.runtime.snapshotFlow { Triple(player.receipt, player.playing, player.compare) }
             .drop(1)
             .conflate()
-            .collect { (_, playing) ->
+            .collect { (_, playing, _) ->
                 if (!playing && player.frame != null) withContext(Dispatchers.IO) { player.show(player.index) }
             }
     }
@@ -186,9 +191,24 @@ fun PlayerScreen(uri: Uri, onBack: () -> Unit) {
                         e == null || e.frame == null -> CircularProgressIndicator(Modifier.size(28.dp))
                         else -> e.frame?.let { bmp ->
                             key(bmp, e.index) { Image(bmp.asImageBitmap(), "Video preview, frame ${e.index + 1}",
-                                Modifier.fillMaxSize().padding(8.dp), contentScale = ContentScale.Fit) }
+                                Modifier.fillMaxSize().padding(8.dp)
+                                    // Press and hold: the original (MLV-App defaults) until release.
+                                    .pointerInput(e) {
+                                        awaitEachGesture {
+                                            awaitFirstDown(requireUnconsumed = false)
+                                            val up = withTimeoutOrNull(250) { waitForUpOrCancellation() }
+                                            if (up == null && !e.playing && e.canGrade) {
+                                                e.compare = true
+                                                try { waitForUpOrCancellation() } finally { e.compare = false }
+                                            }
+                                        }
+                                    },
+                                contentScale = ContentScale.Fit) }
                         }
                     }
+                    if (e?.compare == true) Text("Original", fontSize = 11.sp, color = Color.White,
+                        modifier = Modifier.align(Alignment.TopStart).padding(12.dp)
+                            .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp)).padding(horizontal = 8.dp, vertical = 3.dp))
                     if (e != null && !e.canGrade) Text("Adjustments unavailable for this take", fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.align(Alignment.TopCenter).padding(8.dp))
