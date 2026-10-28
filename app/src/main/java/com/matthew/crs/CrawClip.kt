@@ -18,6 +18,20 @@ data class ClipInfo(
     val hasAudio: Boolean get() = audioRate > 0 && audioChannels > 0 && audioBits > 0
 }
 
+/** Per-frame levels, white balance and lens shading (see nativeDecodeToBlob). */
+class FrameParams(
+    val width: Int, val height: Int, val cfa: Int,
+    val black: FloatArray, val white: Float, val neutral: FloatArray,
+    val shadeColumns: Int, val shadeRows: Int, val shadeGains: FloatArray,
+) {
+    companion object {
+        fun from(a: FloatArray) = FrameParams(
+            a[0].toInt(), a[1].toInt(), a[2].toInt(), a.copyOfRange(3, 7), a[7], a.copyOfRange(8, 11),
+            a[11].toInt(), a[12].toInt(), a.copyOfRange(13, a.size),
+        )
+    }
+}
+
 /**
  * One open .CRAW take. Opened from a content Uri through its file
  * descriptor, which the native reader memory-maps in place (no copy out of
@@ -39,6 +53,17 @@ class CrawClip private constructor(private var handle: Long) : Closeable {
         if (code != 0) android.util.Log.w("CrawClip", "render $index failed: code $code")
         return code == 0
     }
+
+    /**
+     * Decodes Bayer frame [index] into [blob] (RawLens GPU input) and returns
+     * [FrameParams]; null for RGB (binned) takes or on error.
+     */
+    fun decodeToBlob(index: Int, blob: android.hardware.HardwareBuffer, half: Boolean = false, threads: Int = 0): FrameParams? =
+        if (handle == 0L) null else nativeDecodeToBlob(handle, index, blob, half, threads)?.let(FrameParams::from)
+
+    /** White-balanced camera RGB -> linear Rec.709 (row-major) for [neutral]. */
+    fun ccm(neutral: FloatArray): FloatArray? =
+        if (handle == 0L) null else nativeCcm(handle, neutral[0], neutral[1], neutral[2])
 
     /** Reads take WAV bytes at [offset] into [dst]; returns the count (<= 0 at the end). */
     fun readWav(offset: Long, dst: ByteArray, length: Int = dst.size): Int =
@@ -83,6 +108,8 @@ class CrawClip private constructor(private var handle: Long) : Closeable {
         @JvmStatic private external fun nativeInfo(handle: Long): String?
         @JvmStatic private external fun nativePreviewSize(handle: Long): IntArray?
         @JvmStatic private external fun nativeRender(handle: Long, index: Int, bitmap: Bitmap, exposureEv: Float): Int
+        @JvmStatic private external fun nativeDecodeToBlob(handle: Long, index: Int, blob: android.hardware.HardwareBuffer, half: Boolean, threads: Int): FloatArray?
+        @JvmStatic private external fun nativeCcm(handle: Long, nr: Float, ng: Float, nb: Float): FloatArray?
         @JvmStatic private external fun nativeReadWav(handle: Long, offset: Long, dst: ByteArray, length: Int): Int
     }
 }
