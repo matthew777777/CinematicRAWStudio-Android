@@ -146,6 +146,7 @@ fun GalleryScreen(onOpen: (Uri) -> Unit, onOpenProject: (String) -> Unit = {}) {
         onDispose { controller?.show(WindowInsetsCompat.Type.statusBars()) }
     }
     val prefs = remember { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
+    LaunchedEffect(Unit) { SettingsClipboard.load(context) }
     var tree by remember { mutableStateOf(prefs.getString(KEY_TREE, null)?.let(Uri::parse)) }
     var takes by remember { mutableStateOf<List<Take>?>(tree?.let { Thumbs.listings[it.toString()] }) }
     var exportJobs by remember { mutableStateOf(false) }
@@ -343,7 +344,13 @@ fun GalleryScreen(onOpen: (Uri) -> Unit, onOpenProject: (String) -> Unit = {}) {
             onExport = { menuFor = null; exportFor = take },
             onExportDng = { menuFor = null; dngUris = listOf(take.uri) },
             onAddToProject = { menuFor = null; projectFor = take },
-            onDelete = { menuFor = null; deleteFor = take })
+            onDelete = { menuFor = null; deleteFor = take },
+            // Copied settings onto this take (keeps its RAW corrections); RGB takes are not graded.
+            onPaste = SettingsClipboard.copied?.takeIf { Thumbs.cache.get(take.uri.toString())?.info?.rgb != true }?.let { copied -> {
+                menuFor = null
+                val key = take.uri.toString()
+                ReceiptStore.save(context, key, copied.onto(ReceiptStore.load(context, key) ?: Receipt()))
+            } })
     }
     infoFor?.let { take -> TakeInfoSheet(take, Thumbs.cache.get(take.uri.toString())?.info, onDismiss = { infoFor = null }) }
     exportFor?.let { take ->

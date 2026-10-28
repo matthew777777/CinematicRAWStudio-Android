@@ -187,7 +187,8 @@ class GpuFrameRenderer(private val clip: CrawClip, width: Int, height: Int) : Au
     // Which frame and raw-tool settings rgbF16 holds (-1: none).
     private var rcdIndex = -1
     private var rcdTools: List<Int>? = null
-    private val graded = arrayOfNulls<Bitmap>(2)
+    // Up to four outputs in rotation (see renderGraded).
+    private val graded = arrayOfNulls<Bitmap>(4)
     private var gradedNext = 0
 
     // --- Export read-ahead: full-resolution decodes of the next frames on the
@@ -271,13 +272,15 @@ class GpuFrameRenderer(private val clip: CrawClip, width: Int, height: Int) : Au
      * else MLV-App's own CPU code. For paused frames; playback uses the fused
      * GPU grade.
      */
-    fun renderGraded(index: Int, grade: MlvGrade, receipt: () -> Receipt): Bitmap? = withRcd(index, grade, receipt) { buf ->
+    fun renderGraded(index: Int, grade: MlvGrade, outputs: Int = 2, receipt: () -> Receipt): Bitmap? = withRcd(index, grade, receipt) { buf ->
         val t0 = System.nanoTime()
+        // [outputs] bitmaps rotate: 2 normally (one shown, one rendering); 4 for split view.
+        if (gradedNext >= outputs) gradedNext = 0
         val out = graded[gradedNext] ?: Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also { graded[gradedNext] = it }
         val onGpu = grade.gpuRender(buf, out)
         if (onGpu == false || (onGpu == null && !grade.render(buf, out))) return@withRcd null
         Log.i("GpuFrameRenderer", "graded $index: MLV-App %s %.1f ms".format(if (onGpu == true) "Vulkan" else "CPU", (System.nanoTime() - t0) / 1e6))
-        gradedNext = 1 - gradedNext
+        gradedNext = (gradedNext + 1) % outputs
         out
     }
 

@@ -22,6 +22,19 @@ class PlayerEngine(private val clip: CrawClip, private val gpu: GpuFrameRenderer
     var receipt by mutableStateOf(Receipt())
     /** While true (finger held on the preview), paused frames show the original. */
     var compare by mutableStateOf(false)
+    /** Panel sections switched off in the preview ("preview without"); export is unaffected. */
+    var sectionsOff by mutableStateOf(emptySet<EditSection>())
+    /** Split before/after: paused frames also render the original into [originalFrame]. */
+    var split by mutableStateOf(false)
+    var originalFrame: Bitmap? by mutableStateOf(null)
+        private set
+
+    /** The receipt the preview shows: sections switched off are at MLV-App's defaults. */
+    val previewReceipt: Receipt get() = receipt.withSectionsOff(sectionsOff)
+
+    /** MLV-App defaults with [r]'s raw corrections (sensor fixes: same RCD frame). */
+    private fun original(r: Receipt) = Receipt(rawFixesEnabled = r.rawFixesEnabled, verticalStripes = r.verticalStripes,
+        badPixels = r.badPixels, bpsMethod = r.bpsMethod, bpiMethod = r.bpiMethod, chromaSmooth = r.chromaSmooth, patternNoise = r.patternNoise)
 
     /** As-shot MLV-App kelvin, once found. */
     val asShotKelvin: Double? get() = grade?.asShot?.first
@@ -80,13 +93,14 @@ class PlayerEngine(private val clip: CrawClip, private val gpu: GpuFrameRenderer
     fun show(i: Int) {
         val target = i.coerceIn(0, maxOf(info.frames - 1, 0))
         val t0 = SystemClock.elapsedRealtime()
-        clip.setRawTools(receipt.rawToolValues())
+        val r = previewReceipt
+        clip.setRawTools(r.rawToolValues())
         if (gpu != null && grade != null && !playing) {
-            // The original keeps the raw corrections (sensor fixes, same RCD frame).
-            val r = receipt
-            val shown = if (compare) Receipt(rawFixesEnabled = r.rawFixesEnabled, verticalStripes = r.verticalStripes, badPixels = r.badPixels,
-                bpsMethod = r.bpsMethod, bpiMethod = r.bpiMethod, chromaSmooth = r.chromaSmooth, patternNoise = r.patternNoise) else r
-            val bmp = gpu.renderGraded(target, grade) { shown }
+            val shown = if (compare) original(r) else r
+            // Split: the original first, so both renders share one decode and RCD.
+            val slots = if (split) 4 else 2
+            originalFrame = if (split && !compare) gpu.renderGraded(target, grade, slots) { original(r) } else null
+            val bmp = gpu.renderGraded(target, grade, slots) { shown }
             if (bmp != null) { frame = bmp; index = target }
             return
         }

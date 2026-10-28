@@ -119,11 +119,12 @@ private fun Row2(label: String, value: String) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TakeActionsSheet(take: Take, onDismiss: () -> Unit, onEdit: () -> Unit, onInfo: () -> Unit, onExport: () -> Unit,
-    onExportDng: () -> Unit, onAddToProject: () -> Unit, onDelete: () -> Unit) {
+    onExportDng: () -> Unit, onAddToProject: () -> Unit, onDelete: () -> Unit, onPaste: (() -> Unit)? = null) {
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surface) {
         Column(Modifier.padding(bottom = 24.dp)) {
             Text(take.name.removeSuffix(".craw"), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
             Action(Icons.Default.Tune, "Edit", onEdit)
+            if (onPaste != null) Action(Icons.Default.ContentPaste, "Paste settings", onPaste)
             Action(Icons.Default.VideoLibrary, "Add to project", onAddToProject)
             Action(Icons.Default.FileUpload, "Export video", onExport)
             Action(Icons.Default.Folder, "Export CinemaDNG", onExportDng)
