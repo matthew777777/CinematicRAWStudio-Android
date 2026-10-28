@@ -28,7 +28,7 @@ fun ProjectsScreen(onOpen: (String) -> Unit, onBack: (() -> Unit)? = null) {
     var fps by remember { mutableIntStateOf(30) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) { projects = withContext(Dispatchers.IO) { ProjectStore.list(context) } }
-    Scaffold(topBar = { TopAppBar(title = { Text("Projects") }, navigationIcon = {
+    Scaffold(topBar = { TopAppBar(windowInsets = WindowInsets.displayCutout.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal), title = { Text("Projects") }, navigationIcon = {
         if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to library") }
     }, actions = { FilledTonalButton(onClick = { create = true }, modifier = Modifier.padding(end = 16.dp)) {
         Icon(Icons.Default.Add, null, Modifier.size(18.dp)); Text("New project")

@@ -138,13 +138,7 @@ fun formatDuration(seconds: Double): String {
 fun GalleryScreen(onOpen: (Uri) -> Unit, onOpenProject: (String) -> Unit = {}) {
     val context = LocalContext.current
     val landscape = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-    val window = (context as? android.app.Activity)?.window
-    DisposableEffect(landscape, window) {
-        val controller = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
-        if (landscape) controller?.hide(WindowInsetsCompat.Type.statusBars())
-        else controller?.show(WindowInsetsCompat.Type.statusBars())
-        onDispose { controller?.show(WindowInsetsCompat.Type.statusBars()) }
-    }
+    // System bars are hidden app-wide (MainActivity): full-screen look.
     val prefs = remember { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
     LaunchedEffect(Unit) { SettingsClipboard.load(context) }
     var tree by remember { mutableStateOf(prefs.getString(KEY_TREE, null)?.let(Uri::parse)) }
@@ -258,7 +252,7 @@ fun GalleryScreen(onOpen: (Uri) -> Unit, onOpenProject: (String) -> Unit = {}) {
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides if (landscape) 36.dp else 40.dp) {
     Scaffold(topBar = {
         Surface(color = MaterialTheme.colorScheme.surface) {
-            Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars)
+            Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Top))
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
                 .height(if (landscape) 40.dp else 52.dp).padding(start = 16.dp, end = 12.dp),
                 verticalAlignment = Alignment.CenterVertically) {

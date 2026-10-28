@@ -11,6 +11,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -42,6 +43,19 @@ class MainActivity : ComponentActivity() {
     private val viewRequest = mutableStateOf<String?>(null)
     private val tabRequest = mutableStateOf<String?>(null)
 
+    /** Full-screen look: status and navigation bars hidden; a swipe from the edge shows them briefly. */
+    private fun hideSystemBars() {
+        val controller = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+        controller.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+    }
+
+    // Dialogs, the keyboard and other apps can bring the bars back.
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) hideSystemBars()
+    }
+
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         intent.data?.let { viewRequest.value = it.toString() }
@@ -59,6 +73,7 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
+        hideSystemBars()
         ExportQueue.load(this)
         setContent {
             StudioTheme {
@@ -92,7 +107,8 @@ class MainActivity : ComponentActivity() {
                     }
                     else -> {
                         if (tab != Tab.Library) BackHandler { tab = Tab.Library }
-                        Scaffold(bottomBar = { BottomBar(tab) { tab = it } }) { pad ->
+                        // Only the tab bar is consumed: each tab handles the top edge itself.
+                        Scaffold(bottomBar = { BottomBar(tab) { tab = it } }, contentWindowInsets = WindowInsets(0)) { pad ->
                             Box(Modifier.padding(bottom = pad.calculateBottomPadding()).consumeWindowInsets(pad).fillMaxSize()) {
                                 when (tab) {
                                     Tab.Library -> GalleryScreen(onOpen = { open = it.toString() }, onOpenProject = { projectId = it })

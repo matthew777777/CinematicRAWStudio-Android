@@ -61,12 +61,7 @@ private fun SequenceEditor(s: ProjectSession, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val configuration = LocalConfiguration.current
     val landscape = configuration.screenWidthDp > configuration.screenHeightDp
-    val window = (context as? android.app.Activity)?.window
-    DisposableEffect(landscape, window) {
-        val controller = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
-        if (landscape) controller?.hide(WindowInsetsCompat.Type.statusBars()) else controller?.show(WindowInsetsCompat.Type.statusBars())
-        onDispose { controller?.show(WindowInsetsCompat.Type.statusBars()) }
-    }
+    // System bars are hidden app-wide (MainActivity): full-screen look.
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle, s) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event -> if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) s.player.pause() }
@@ -122,7 +117,7 @@ private fun SequenceEditor(s: ProjectSession, onBack: () -> Unit) {
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides if (landscape) 36.dp else 48.dp) {
     Scaffold(topBar = {
         Surface {
-            Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars)
+            Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Top))
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).padding(end = 16.dp)
                 .height(if (landscape) 36.dp else 48.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack, enabled = !s.importing) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to projects") }
