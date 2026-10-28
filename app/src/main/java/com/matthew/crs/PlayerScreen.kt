@@ -53,7 +53,7 @@ fun PlayerScreen(uri: Uri, onBack: () -> Unit) {
             else runCatching { GpuFrameRenderer(c, c.info.width, c.info.height) }
                 .onFailure { android.util.Log.w("PlayerScreen", "GPU renderer unavailable", it) }.getOrNull()
         }
-        engine = PlayerEngine(c, gpu)
+        engine = PlayerEngine(c, gpu).also { e -> ReceiptStore.load(context, uri.toString())?.let { e.receipt = it } }
     }
     // Release exactly what this effect saw: reading the state inside onDispose
     // would close the clip that just replaced it.
@@ -95,7 +95,10 @@ fun PlayerScreen(uri: Uri, onBack: () -> Unit) {
                     // Re-render the paused frame through MLV-App after edits settle.
                     LaunchedEffect(e.receipt) {
                         kotlinx.coroutines.delay(120)
-                        withContext(Dispatchers.IO) { e.show(e.index) }
+                        withContext(Dispatchers.IO) {
+                            ReceiptStore.save(context, uri.toString(), e.receipt)
+                            e.show(e.index)
+                        }
                     }
                     EditorPanel(e.receipt, e.asShotKelvin, onChange = { e.receipt = it }, modifier = Modifier.fillMaxWidth().weight(1f))
                 } else {
