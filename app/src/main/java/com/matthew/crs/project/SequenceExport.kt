@@ -19,12 +19,49 @@ enum class ExportVideoCodec(val label: String, val mime: String, val tenBit: Boo
 }
 enum class ExportOutput { MP4, ORIGINAL_CINEMA_DNG }
 
+/** Largest hardware-encodable size not above a requested one, keeping its aspect. */
+object EncoderLimits {
+    private val cache = HashMap<String, Pair<Int, Int>>()
+
+    @Synchronized
+    fun fit(mime: String, width: Int, height: Int, fps: Double): Pair<Int, Int> = cache.getOrPut("$mime $width $height $fps") {
+        val caps = runCatching {
+            MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
+                .filter { it.isEncoder && it.isHardwareAccelerated && it.supportedTypes.any { t -> t.equals(mime, true) } }
+                .mapNotNull { runCatching { it.getCapabilitiesForType(mime).videoCapabilities }.getOrNull() }
+        }.getOrDefault(emptyList())
+        if (caps.isEmpty() || caps.any { it.areSizeAndRateSupported(width, height, fps) }) return@getOrPut width to height
+        // Shrink in 1% steps (aspect kept, even sizes) until an encoder accepts the size.
+        var scale = caps.maxOf { minOf(it.supportedWidths.upper.toDouble() / width, it.supportedHeights.upper.toDouble() / height, 1.0) }
+        while (scale > 0.05) {
+            val w = (width * scale / 2).toInt() * 2
+            val h = (height * scale / 2).toInt() * 2
+            if (w >= 16 && h >= 16 && caps.any { it.areSizeAndRateSupported(w, h, fps) }) return@getOrPut w to h
+            scale -= 0.01
+        }
+        width to height
+    }
+}
+
 data class ExportSettings(val codec: ExportVideoCodec = ExportVideoCodec.AVC,
     val height: Int = 0, val bitrateMbps: Int = 24, val audio: Boolean = true, val output: ExportOutput = ExportOutput.MP4) {
-    fun output(project: SequenceProject): SequenceProject {
+    /** The requested size (project or chosen height, project aspect) before encoder limits. */
+    fun requested(project: SequenceProject): Pair<Int, Int> {
         val h = if (height == 0) project.height else height
         val w = ((project.width.toDouble() / project.height * h / 2).toInt() * 2).coerceAtLeast(16)
-        return project.copy(width = w, height = h).validated()
+        return w to h
+    }
+
+    /**
+     * Output canvas: the requested size, scaled down (aspect kept, even
+     * dimensions) to the largest size a hardware encoder for this codec
+     * accepts. E.g. a 4080x2040 take exports at 3840x1920 where the encoder
+     * is limited to 3840 wide.
+     */
+    fun output(project: SequenceProject): SequenceProject {
+        val (w, h) = requested(project)
+        val (fw, fh) = EncoderLimits.fit(codec.mime, w, h, project.rate.fps)
+        return project.copy(width = fw, height = fh).validated()
     }
     fun format(project: SequenceProject): MediaFormat {
         val out = output(project)

@@ -17,11 +17,16 @@ import kotlin.math.*
 /** Real-device integration checks: RAW grading -> codec, sequence cuts, mixed audio, save/reopen, DNG. */
 class ProjectInstrumentation : Instrumentation() {
     private var headless = false
-    override fun onCreate(arguments: Bundle?) { headless = arguments?.getString("headless") == "true"; super.onCreate(arguments); start() }
+    private var main10HighRes = false
+    override fun onCreate(arguments: Bundle?) {
+        headless = arguments?.getString("headless") == "true"
+        main10HighRes = arguments?.getString("main10hires") == "true"
+        super.onCreate(arguments); start()
+    }
     private fun report(text: String) { sendStatus(0, Bundle().apply { putString("stream", text + "\n") }) }
     override fun onStart() {
         try {
-            runBlocking { verify() }
+            runBlocking { if (main10HighRes) verifyMain10HighRes() else verify() }
             finish(Activity.RESULT_OK, Bundle().apply { putString("stream", "PASS: project/RAW/video/audio/CinemaDNG integration\n") })
         } catch (failure: Throwable) {
             finish(Activity.RESULT_CANCELED, Bundle().apply { putString("stream", failure.stackTraceToString()) })
@@ -159,6 +164,76 @@ class ProjectInstrumentation : Instrumentation() {
         File(context.filesDir, "projects/${project.id}.json").delete()
         report("Review artifacts: ${dir.path}")
     }
+    /**
+     * HEVC Main10 at high resolution (-e main10hires true): a full-resolution
+     * Bayer take, graded, exported for 3 s at its native size and at UHD.
+     * Checks encoder limits, SPS 10-bit, exact frame count and every
+     * sampled frame against the MLV-App-graded preview.
+     */
+    private suspend fun verifyMain10HighRes() {
+        val context = targetContext
+        val root = context.getSharedPreferences("gallery", 0).getString("tree", null) ?: error("Choose a source folder in the library first")
+        val take = listTakes(context, Uri.parse(root)).firstOrNull { t ->
+            CrawClip.open(context, t.uri)?.use { !it.info.rgb && it.info.width >= 3840 && it.info.frames >= 90 } == true
+        } ?: error("Test requires a full-resolution (>= 3840 wide) Bayer take of >= 3 s")
+        val dir = context.getExternalFilesDir("project-review")!!.apply { mkdirs() }
+        val raw = ProjectMedia.importRaw(context, take.uri).copy(hasAudio = false)
+        val rate = FrameRate(30)
+        val frames = 90L
+        for (info in android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS).codecInfos) {
+            if (!info.isEncoder || "video/hevc" !in info.supportedTypes) continue
+            val caps = info.getCapabilitiesForType("video/hevc")
+            val main10 = caps.profileLevels.any { it.profile == android.media.MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10 }
+            val v = caps.videoCapabilities ?: continue
+            report("Encoder ${info.name}: Main10 advertised=$main10, max ${v.supportedWidths.upper}x${v.supportedHeights.upper}, " +
+                "4080x2040@30 ${v.areSizeAndRateSupported(4080, 2040, 30.0)}, 3840x2160@30 ${v.areSizeAndRateSupported(3840, 2160, 30.0)}")
+        }
+        for ((width, height) in listOf(raw.width to raw.height, 3840 to 2160).distinct()) {
+            val project = SequenceProject(name = "Main10 $width x $height", width = width, height = height, rate = rate).append(raw).let { p ->
+                p.copy(clips = p.clips.map { it.copy(durationUs = rate.time(frames), receipt = Receipt(exposure = 100, contrast = 13, saturation = 15)) }).validated()
+            }
+            val settings = ExportSettings(codec = ExportVideoCodec.HEVC10, bitrateMbps = 100)
+            val encoder = settings.encoder(project) ?: error("No Main10 encoder candidate for $width x $height")
+            val out = settings.output(project)
+            report("Requested $width x $height -> output ${out.width} x ${out.height}")
+            val expected = ProjectFrameRenderer(context).use { r ->
+                listOf(0L, 45L, 89L).map { f -> r.render(project, f).copy(Bitmap.Config.ARGB_8888, false)!! }
+            }
+            val output = File(dir, "main10-hires-${width}x${height}.mp4")
+            val t0 = android.os.SystemClock.elapsedRealtime()
+            SequenceExporter.export(context, project, settings, Uri.fromFile(output)) { _, _ -> }
+            val seconds = (android.os.SystemClock.elapsedRealtime() - t0) / 1000.0
+            val reader = MediaExtractor()
+            val bits = try {
+                reader.setDataSource(output.path)
+                val v = (0 until reader.trackCount).first { reader.getTrackFormat(it).getString("mime") == "video/hevc" }
+                val f = reader.getTrackFormat(v)
+                check(f.getInteger("width") == out.width && f.getInteger("height") == out.height) { "Output size ${f.getInteger("width")}x${f.getInteger("height")}" }
+                val csd = f.getByteBuffer("csd-0")!!.duplicate()
+                HevcBitstream.bitDepth(ByteArray(csd.remaining()).also { csd.get(it) })
+            } finally { reader.release() }
+            check(bits == (10 to 10)) { "Bitstream is not 10-bit at $width x $height: $bits" }
+            var count = 0
+            MediaExtractor().apply { setDataSource(output.path); selectTrack((0 until trackCount).first { getTrackFormat(it).getString("mime")!!.startsWith("video/") }) }.also { e ->
+                while (e.sampleTime >= 0) { count++; e.advance() }
+                e.release()
+            }
+            check(count == frames.toInt()) { "Expected $frames frames, found $count" }
+            val errors = MediaMetadataRetriever().use { m ->
+                m.setDataSource(output.path)
+                listOf(0L, 1_500_000L, 2_966_667L).mapIndexed { n, t ->
+                    val b = m.getFrameAtTime(t, MediaMetadataRetriever.OPTION_CLOSEST) ?: error("Missing frame at $t")
+                    error(b, expected[n]).also { b.recycle() }
+                }
+            }
+            expected.forEach { it.recycle() }
+            check(errors.all { it < 20 }) { "Frames differ from graded preview at $width x $height: MAE $errors" }
+            report("Main10 ${out.width} x ${out.height} via $encoder: $count frames in %.1f s (%.1f fps), SPS 10/10, %.1f MB, MAE vs graded preview %s"
+                .format(seconds, count / seconds, output.length() / 1e6, errors.joinToString("/") { "%.1f".format(it) }))
+        }
+        report("Review artifacts: ${dir.path}")
+    }
+
     private fun tone(context: android.content.Context, sampleRate: Int, frequency: Double, amplitude: Double, duration: Long): SourceAsset {
         val source = SourceAsset(uri = "file:///test-tone", name = "Tone ${frequency.toInt()} Hz.wav", kind = AssetKind.AUDIO, durationUs = duration, hasAudio = true)
         val file = ProjectMedia.audioFile(context, source); file.parentFile!!.mkdirs()
