@@ -122,6 +122,10 @@ fun ExportPanel(prepare: (suspend () -> SequenceProject)? = null, beforeStart: s
                             val out = result.getOrNull()
                             val encoder by produceState<String?>(null, p, settings) { value = withContext(Dispatchers.IO) { settings.encoder(p) } }
                             if (out != null) Text("${out.width} × ${out.height} · estimated %.1f MB".format(settings.bitrateMbps * p.durationUs / 8_000_000.0), fontSize = 11.sp)
+                            if (out != null) settings.requested(p).let { (rw, rh) ->
+                                if (rw != out.width || rh != out.height)
+                                    Text("$rw × $rh exceeds this device's ${settings.codec.label} encoder; exporting at ${out.width} × ${out.height} (same aspect).", fontSize = 11.sp)
+                            }
                             if (encoder == null) Text("These settings are not supported by a device encoder. Choose another codec, resolution, or bitrate.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                             else Text("Encoder · $encoder", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Button(onClick = { destination.launch(p.name.replace(Regex("[^a-zA-Z0-9 _-]"), "_") + ".mp4") },
