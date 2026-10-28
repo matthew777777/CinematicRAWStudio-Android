@@ -189,13 +189,13 @@ class GpuFrameRenderer(private val clip: CrawClip, width: Int, height: Int) : Au
      * MLV-App code): Packed RCD to camera RGB, then [grade]. For paused frames;
      * playback uses the fused GPU grade.
      */
-    fun renderGraded(index: Int, grade: MlvGrade, settings: (asShot: Pair<Double, Double>) -> GradeSettings): Bitmap? {
+    fun renderGraded(index: Int, grade: MlvGrade, receipt: () -> Receipt): Bitmap? {
         if (!GpuPipeline.ensureRcdMode(fused = false)) return null
         val slot = decode(index, false) ?: return null
         try {
             val f = slot.params ?: return null
-            val asShot = grade.asShot ?: grade.findAsShot(f.neutral)
-            grade.apply(settings(asShot))
+            if (grade.asShot == null) grade.findAsShot(f.neutral)
+            grade.apply(receipt())
             val buf = rgbF16 ?: HardwareBuffer.create(w, h, HardwareBuffer.RGBA_FP16, 1,
                 HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE or HardwareBuffer.USAGE_GPU_DATA_BUFFER or
                     HardwareBuffer.USAGE_GPU_COLOR_OUTPUT or HardwareBuffer.USAGE_CPU_READ_OFTEN).also { rgbF16 = it }
