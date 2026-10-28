@@ -51,10 +51,22 @@ void ensureSize(Grade* g, int w, int h) {
     processingSetVignetteMask(g->p, w, h, g->vigRadius, g->vigShape, 1.0f, 1.0f);
 }
 
+// IEEE half -> float, exact (every half is representable). Plain bit
+// arithmetic: _Float16 is not dependable on 32-bit ARM (armeabi-v7a).
 inline float half2float(uint16_t h) {
-    _Float16 f;
-    std::memcpy(&f, &h, 2);
-    return static_cast<float>(f);
+    const uint32_t sign = uint32_t(h & 0x8000u) << 16;
+    uint32_t exp = (h >> 10) & 0x1fu, man = h & 0x3ffu, bits;
+    if (exp == 0x1f) bits = sign | 0x7f800000u | (man << 13);          // inf / NaN
+    else if (exp != 0) bits = sign | ((exp + 112u) << 23) | (man << 13);  // normal
+    else if (man == 0) bits = sign;                                       // zero
+    else {                                                                // subnormal: normalise
+        exp = 113u;
+        while (!(man & 0x400u)) { man <<= 1; --exp; }
+        bits = sign | (exp << 23) | ((man & 0x3ffu) << 13);
+    }
+    float f;
+    std::memcpy(&f, &bits, 4);
+    return f;
 }
 
 // The RCD output as MLV-App input: half float * 65535 + 0.5, clamped. Multiply

@@ -15,7 +15,8 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "com.matthew.crs.ProjectInstrumentation"
-        ndk { abiFilters += listOf("arm64-v8a") }
+        // As RawLens: 64- and 32-bit ARM, so every device that runs RawLens runs this app.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         externalNativeBuild { cmake { arguments += listOf("-DANDROID_STL=c++_shared") } }
     }
     // Device tests and benchmarks run on deviceTest: release in every respect

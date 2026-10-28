@@ -82,7 +82,12 @@ Known limitations:
 
 ## Requirements
 
-- Android 11 (API 30) or newer, arm64, Vulkan with AHardwareBuffer import.
+- The same devices as RawLens: Android 11 (API 30) or newer, 64- or 32-bit
+  ARM (`arm64-v8a`, `armeabi-v7a`), Vulkan 1.1 with AHardwareBuffer import.
+- The Vulkan grade follows RawLens's rules for Adreno and Mali: GPU chosen by
+  capability, the driver's own format for imported buffers, shared images
+  handed over through `VK_QUEUE_FAMILY_FOREIGN_EXT`, 128-invocation
+  workgroups. Anything a GPU cannot do falls back to MLV-App's CPU code.
 - Developed and tested on a Xiaomi 25080RABDG (MediaTek MT6878 / Dimensity
   7300, Mali-G615).
 

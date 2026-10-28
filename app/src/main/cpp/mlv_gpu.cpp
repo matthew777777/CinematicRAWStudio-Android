@@ -82,6 +82,8 @@ struct Engine::Impl {
     VkFence fence = VK_NULL_HANDLE;
     VkQueryPool timer = VK_NULL_HANDLE;
     float tickNs = 1.0f;
+    bool foreign = false;  // VK_EXT_queue_family_foreign enabled
+    bool timestamps = false;  // the compute queue has timestampValidBits
     PFN_vkGetAndroidHardwareBufferPropertiesANDROID getAhbProps = nullptr;
     Buf tables, params, processed, luma, chroma, rgba;
     AHardwareBuffer* srcAhb = nullptr;  // imported source, cached
@@ -170,20 +172,35 @@ struct Engine::Impl {
         VkAndroidHardwareBufferPropertiesANDROID props{VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_PROPERTIES_ANDROID};
         props.pNext = &fmt;
         if (getAhbProps(device, ahb, &props) != VK_SUCCESS) return "AHardwareBuffer properties";
+        // As RawLens's importAhb: the driver's format for this buffer (an
+        // opaque external format cannot be a storage image -> CPU path).
+        const VkFormat format = fmt.format;
+        if (format == VK_FORMAT_UNDEFINED) return "RCD output has an external-only format";
         VkExternalMemoryImageCreateInfo ext{VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO};
         ext.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID;
         VkImageCreateInfo ii{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
         ii.pNext = &ext;
         ii.imageType = VK_IMAGE_TYPE_2D;
-        ii.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+        ii.format = format;
         ii.extent = {static_cast<uint32_t>(w), static_cast<uint32_t>(h), 1};
         ii.mipLevels = 1; ii.arrayLayers = 1;
         ii.samples = VK_SAMPLE_COUNT_1_BIT;
-        ii.tiling = VK_IMAGE_TILING_OPTIMAL;
         ii.usage = VK_IMAGE_USAGE_STORAGE_BIT;
         ii.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         ii.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        if (vkCreateImage(device, &ii, nullptr, &srcImage) != VK_SUCCESS) return "source image";
+        // The app allocates this buffer for GPU use, so OPTIMAL first (as RawLens
+        // for its own outputs), LINEAR if the driver refuses; each only where the
+        // format supports storage images with that tiling.
+        VkFormatProperties fp{};
+        vkGetPhysicalDeviceFormatProperties(gpu, format, &fp);
+        for (VkImageTiling tiling : {VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_TILING_LINEAR}) {
+            const VkFormatFeatureFlags features = tiling == VK_IMAGE_TILING_OPTIMAL ? fp.optimalTilingFeatures : fp.linearTilingFeatures;
+            if (!(features & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT)) continue;
+            ii.tiling = tiling;
+            if (vkCreateImage(device, &ii, nullptr, &srcImage) == VK_SUCCESS) break;
+            srcImage = VK_NULL_HANDLE;
+        }
+        if (!srcImage) return "RCD output cannot be a storage image on this GPU";
         VkImportAndroidHardwareBufferInfoANDROID import{VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID};
         import.buffer = ahb;
         VkMemoryDedicatedAllocateInfo dedicated{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO};
@@ -200,7 +217,7 @@ struct Engine::Impl {
         VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
         vi.image = srcImage;
         vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        vi.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+        vi.format = format;
         vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
         if (vkCreateImageView(device, &vi, nullptr, &srcView) != VK_SUCCESS) return "source view";
         AHardwareBuffer_acquire(ahb);
@@ -279,7 +296,26 @@ std::string Engine::init(const std::vector<uint32_t>& gradeSpv, const std::vecto
     if (n == 0) return "no GPU";
     std::vector<VkPhysicalDevice> gpus(n);
     vkEnumeratePhysicalDevices(d.instance, &n, gpus.data());
-    d.gpu = gpus[0];
+    // As RawLens: scan every GPU for Vulkan 1.1, AHardwareBuffer import and a
+    // compute queue (the first enumerated GPU can lack AHB on some Adreno devices).
+    auto deviceHas = [](VkPhysicalDevice g, const char* name) {
+        uint32_t count = 0;
+        vkEnumerateDeviceExtensionProperties(g, nullptr, &count, nullptr);
+        std::vector<VkExtensionProperties> all(count);
+        vkEnumerateDeviceExtensionProperties(g, nullptr, &count, all.data());
+        return std::any_of(all.begin(), all.end(), [&](auto& a) { return !strcmp(a.extensionName, name); });
+    };
+    for (VkPhysicalDevice g : gpus) {
+        VkPhysicalDeviceProperties pp{};
+        vkGetPhysicalDeviceProperties(g, &pp);
+        if (pp.apiVersion < VK_API_VERSION_1_1 || !deviceHas(g, VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME)) continue;
+        uint32_t count = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(g, &count, nullptr);
+        std::vector<VkQueueFamilyProperties> families(count);
+        vkGetPhysicalDeviceQueueFamilyProperties(g, &count, families.data());
+        if (std::any_of(families.begin(), families.end(), [](auto& f) { return (f.queueFlags & VK_QUEUE_COMPUTE_BIT) != 0; })) { d.gpu = g; break; }
+    }
+    if (!d.gpu) return "no GPU with Vulkan 1.1, AHardwareBuffer import and compute";
     vkGetPhysicalDeviceMemoryProperties(d.gpu, &d.memory);
     {
         VkPhysicalDeviceFeatures f{};
@@ -294,7 +330,7 @@ std::string Engine::init(const std::vector<uint32_t>& gradeSpv, const std::vecto
     vkGetPhysicalDeviceQueueFamilyProperties(d.gpu, &qn, q.data());
     d.family = UINT32_MAX;
     for (uint32_t i = 0; i < qn; ++i)
-        if (q[i].queueFlags & VK_QUEUE_COMPUTE_BIT) { d.family = i; break; }
+        if (q[i].queueFlags & VK_QUEUE_COMPUTE_BIT) { d.family = i; d.timestamps = q[i].timestampValidBits > 0; break; }
     if (d.family == UINT32_MAX) return "no compute queue";
     const float priority = 1.0f;
     VkDeviceQueueCreateInfo qi{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
@@ -311,6 +347,8 @@ std::string Engine::init(const std::vector<uint32_t>& gradeSpv, const std::vecto
     for (const char* e : {VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME, VK_KHR_SAMPLER_YCBCR_CONVERSION_EXTENSION_NAME,
                           VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME, VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME})
         if (has(e)) exts.push_back(e);
+    // Ownership of the shared RCD output moves through FOREIGN (RawLens releases it there).
+    d.foreign = has(VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME);
     VkDeviceCreateInfo di{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     di.queueCreateInfoCount = 1;
     di.pQueueCreateInfos = &qi;
@@ -470,17 +508,21 @@ std::string Engine::run(const processingObject_t* p, AHardwareBuffer* src, int w
     VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(d.cmd, &bi);
-    // The RCD output was written (and waited for) on RawLens's Vulkan device.
+    // The RCD output was written (and waited for) on RawLens's Vulkan device,
+    // which releases it to FOREIGN in GENERAL layout. Acquire it the same way:
+    // keeping GENERAL preserves the contents (UNDEFINED may discard them on
+    // drivers that compress images, e.g. Adreno UBWC). Released back after use.
     VkImageMemoryBarrier ib{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
     ib.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    ib.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    ib.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
     ib.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-    ib.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    ib.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    ib.srcQueueFamilyIndex = d.foreign ? VK_QUEUE_FAMILY_FOREIGN_EXT : VK_QUEUE_FAMILY_IGNORED;
+    ib.dstQueueFamilyIndex = d.foreign ? d.family : VK_QUEUE_FAMILY_IGNORED;
     ib.image = d.srcImage;
     ib.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
     vkCmdPipelineBarrier(d.cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &ib);
-    if (!d.timer) {
+    // GPU timestamps (debug timing) only where the queue supports them.
+    if (d.timestamps && !d.timer) {
         VkQueryPoolCreateInfo qp{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
         qp.queryType = VK_QUERY_TYPE_TIMESTAMP;
         qp.queryCount = 3;
@@ -489,20 +531,29 @@ std::string Engine::run(const processingObject_t* p, AHardwareBuffer* src, int w
         vkGetPhysicalDeviceProperties(d.gpu, &pp);
         d.tickNs = pp.limits.timestampPeriod;
     }
-    vkCmdResetQueryPool(d.cmd, d.timer, 0, 3);
-    vkCmdWriteTimestamp(d.cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, d.timer, 0);
+    if (d.timer) {
+        vkCmdResetQueryPool(d.cmd, d.timer, 0, 3);
+        vkCmdWriteTimestamp(d.cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, d.timer, 0);
+    }
     vkCmdBindPipeline(d.cmd, VK_PIPELINE_BIND_POINT_COMPUTE, d.gradePipe);
     vkCmdBindDescriptorSets(d.cmd, VK_PIPELINE_BIND_POINT_COMPUTE, d.gradePipeLayout, 0, 1, &d.gradeSet, 0, nullptr);
-    vkCmdDispatch(d.cmd, uint32_t(w + 15) / 16, uint32_t(h + 15) / 16, 1);
+    vkCmdDispatch(d.cmd, uint32_t(w + 15) / 16, uint32_t(h + 7) / 8, 1);
     VkMemoryBarrier mb{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT};
     vkCmdPipelineBarrier(d.cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &mb, 0, nullptr, 0, nullptr);
-    vkCmdWriteTimestamp(d.cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, d.timer, 1);
+    // Grade pass done with the RCD output: hand it back to FOREIGN for RawLens's next frame.
+    if (d.foreign) {
+        VkImageMemoryBarrier rb = ib;
+        rb.srcAccessMask = VK_ACCESS_SHADER_READ_BIT; rb.dstAccessMask = 0;
+        rb.srcQueueFamilyIndex = d.family; rb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_FOREIGN_EXT;
+        vkCmdPipelineBarrier(d.cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &rb);
+    }
+    if (d.timer) vkCmdWriteTimestamp(d.cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, d.timer, 1);
     vkCmdBindPipeline(d.cmd, VK_PIPELINE_BIND_POINT_COMPUTE, d.outputPipe);
     vkCmdBindDescriptorSets(d.cmd, VK_PIPELINE_BIND_POINT_COMPUTE, d.outputPipeLayout, 0, 1, &d.outputSet, 0, nullptr);
     const int32_t push[5] = {w, h, outW, outH, wantRgba ? 1 : 0};
     vkCmdPushConstants(d.cmd, d.outputPipeLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof push, push);
-    vkCmdDispatch(d.cmd, uint32_t(outW / 2 + 15) / 16, uint32_t(outH / 2 + 15) / 16, 1);
-    vkCmdWriteTimestamp(d.cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, d.timer, 2);
+    vkCmdDispatch(d.cmd, uint32_t(outW / 2 + 15) / 16, uint32_t(outH / 2 + 7) / 8, 1);
+    if (d.timer) vkCmdWriteTimestamp(d.cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, d.timer, 2);
     VkMemoryBarrier hb{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT};
     vkCmdPipelineBarrier(d.cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &hb, 0, nullptr, 0, nullptr);
     vkEndCommandBuffer(d.cmd);
@@ -511,7 +562,7 @@ std::string Engine::run(const processingObject_t* p, AHardwareBuffer* src, int w
     const auto c2 = std::chrono::steady_clock::now();
     using ms = std::chrono::duration<double, std::milli>;
     uint64_t ts[3] = {};
-    vkGetQueryPoolResults(d.device, d.timer, 0, 3, sizeof ts, ts, 8, VK_QUERY_RESULT_64_BIT);
+    if (d.timer) vkGetQueryPoolResults(d.device, d.timer, 0, 3, sizeof ts, ts, 8, VK_QUERY_RESULT_64_BIT);
     __android_log_print(ANDROID_LOG_DEBUG, "MlvGpu", "setup %.1f ms, wait %.1f ms, grade pass %.1f ms, output pass %.1f ms",
                         ms(c1 - c0).count(), ms(c2 - c1).count(), (ts[1] - ts[0]) * d.tickNs / 1e6, (ts[2] - ts[1]) * d.tickNs / 1e6);
     d.invalidate(d.luma);

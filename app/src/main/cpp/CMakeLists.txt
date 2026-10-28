@@ -42,8 +42,12 @@ add_library(crs SHARED
     ${CRAW}/decoder/tools/common/Clip.cpp
     ${CRAW}/develop/Develop.cpp)
 target_include_directories(crs PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${CRAW}/encoder/include ${CRAW}/decoder/include ${CRAW}/decoder/tools ${CRAW}/develop)
-# armv8-a+crc: hardware CRC32C (frame CRCs are verified on every decode).
-target_compile_options(crs PRIVATE -O3 -fno-finite-math-only -march=armv8-a+crc)
+# arm64: armv8-a+crc for hardware CRC32C (frame CRCs are verified on every
+# decode). armeabi-v7a builds the portable code paths (as RawLens ships both).
+target_compile_options(crs PRIVATE -O3 -fno-finite-math-only)
+if(ANDROID_ABI STREQUAL "arm64-v8a")
+    target_compile_options(crs PRIVATE -march=armv8-a+crc)
+endif()
 target_link_libraries(crs PRIVATE mlvprocessing jnigraphics android log vulkan)
 
 # RawLens Vulkan Direct-Log pipeline, vendored unchanged (third_party/rawlens-gpu).
