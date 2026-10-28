@@ -27,7 +27,16 @@ fun ProjectsScreen(onOpen: (String) -> Unit, onBack: (() -> Unit)? = null) {
     var name by remember { mutableStateOf("") }
     var fps by remember { mutableIntStateOf(30) }
     var error by remember { mutableStateOf<String?>(null) }
+    var renaming by remember { mutableStateOf<SequenceProject?>(null) }
+    var deleting by remember { mutableStateOf<SequenceProject?>(null) }
     LaunchedEffect(Unit) { projects = withContext(Dispatchers.IO) { ProjectStore.list(context) } }
+    /** Runs a store change off the main thread, then reloads the list. */
+    fun update(change: () -> Unit) {
+        scope.launch {
+            runCatching { withContext(Dispatchers.IO) { change(); projects = ProjectStore.list(context) } }
+                .onFailure { error = it.message ?: "Cannot change the project" }
+        }
+    }
     Scaffold(topBar = { TopAppBar(windowInsets = WindowInsets.displayCutout.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal), title = { Text("Projects") }, navigationIcon = {
         if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to library") }
     }, actions = { FilledTonalButton(onClick = { create = true }, modifier = Modifier.padding(end = 16.dp)) {
@@ -52,13 +61,43 @@ fun ProjectsScreen(onOpen: (String) -> Unit, onBack: (() -> Unit)? = null) {
                                 Text("${project.clips.count { project.track(it.trackId).kind == TrackKind.VIDEO }} clips · ${com.matthew.crs.formatDuration(project.durationUs / 1e6)} · %.3f fps".format(project.rate.fps),
                                     fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            Icon(Icons.Default.ChevronRight, "Open project")
+                            Box {
+                                var menu by remember { mutableStateOf(false) }
+                                IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "Options for ${project.name}") }
+                                DropdownMenu(menu, { menu = false }) {
+                                    DropdownMenuItem(text = { Text("Rename") }, leadingIcon = { Icon(Icons.Default.Edit, null) },
+                                        onClick = { menu = false; renaming = project; name = project.name })
+                                    DropdownMenuItem(text = { Text("Duplicate") }, leadingIcon = { Icon(Icons.Default.ContentCopy, null) }, onClick = {
+                                        menu = false
+                                        update { ProjectStore.save(context, project.copy(id = newId(), name = "${project.name} copy")) }
+                                    })
+                                    DropdownMenuItem(text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                                        leadingIcon = { Icon(Icons.Default.DeleteOutline, null, tint = MaterialTheme.colorScheme.error) },
+                                        onClick = { menu = false; deleting = project })
+                                }
+                            }
                         }
                     }
                 }
             }
             error?.let { Text(it, Modifier.align(Alignment.BottomCenter).padding(16.dp), color = MaterialTheme.colorScheme.error) }
         }
+    }
+    renaming?.let { project ->
+        AlertDialog(onDismissRequest = { renaming = null }, title = { Text("Rename project") },
+            text = { OutlinedTextField(name, { name = it }, label = { Text("Project name") }, singleLine = true) },
+            confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = {
+                renaming = null
+                update { ProjectStore.save(context, project.copy(name = name.trim())) }
+            }) { Text("Save") } },
+            dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } })
+    }
+    deleting?.let { project ->
+        AlertDialog(onDismissRequest = { deleting = null }, title = { Text("Delete “${project.name}”?") },
+            text = { Text("The project and its edits are removed. Your .craw takes and finished exports are not touched. This cannot be undone.") },
+            confirmButton = { TextButton(onClick = { deleting = null; update { ProjectStore.delete(context, project.id) } }) {
+                Text("Delete", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } })
     }
     if (create) AlertDialog(onDismissRequest = { create = false }, title = { Text("New project") }, text = {
         Column {
