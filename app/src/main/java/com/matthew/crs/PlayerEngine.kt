@@ -20,6 +20,8 @@ class PlayerEngine(private val clip: CrawClip, private val gpu: GpuFrameRenderer
 
     /** MLV-App receipt (MLV-App slider units and defaults) for this clip. */
     var receipt by mutableStateOf(Receipt())
+    /** While true (finger held on the preview), paused frames show the original. */
+    var compare by mutableStateOf(false)
 
     /** As-shot MLV-App kelvin, once found. */
     val asShotKelvin: Double? get() = grade?.asShot?.first
@@ -80,7 +82,11 @@ class PlayerEngine(private val clip: CrawClip, private val gpu: GpuFrameRenderer
         val t0 = SystemClock.elapsedRealtime()
         clip.setRawTools(receipt.rawToolValues())
         if (gpu != null && grade != null && !playing) {
-            val bmp = gpu.renderGraded(target, grade) { receipt }
+            // The original keeps the raw corrections (sensor fixes, same RCD frame).
+            val r = receipt
+            val shown = if (compare) Receipt(rawFixesEnabled = r.rawFixesEnabled, verticalStripes = r.verticalStripes, badPixels = r.badPixels,
+                bpsMethod = r.bpsMethod, bpiMethod = r.bpiMethod, chromaSmooth = r.chromaSmooth, patternNoise = r.patternNoise) else r
+            val bmp = gpu.renderGraded(target, grade) { shown }
             if (bmp != null) { frame = bmp; index = target }
             return
         }
