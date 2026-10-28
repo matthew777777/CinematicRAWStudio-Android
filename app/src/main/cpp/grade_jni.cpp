@@ -57,8 +57,10 @@ inline float half2float(uint16_t h) {
     return static_cast<float>(f);
 }
 
-// The RCD output as MLV-App input: half float * 65535 + 0.5, clamped.
+// The RCD output as MLV-App input: half float * 65535 + 0.5, clamped. Multiply
+// and add round separately (no FMA at -O3), exactly as mlv_grade.comp does.
 bool readRcd(AHardwareBuffer* hb, int w, int hh, std::vector<uint16_t>& in) {
+#pragma clang fp contract(off)
     AHardwareBuffer_Desc d{};
     AHardwareBuffer_describe(hb, &d);
     in.resize(size_t(w) * hh * 3);
@@ -384,11 +386,12 @@ Java_com_matthew_crs_MlvGrade_nativeGpuParity(JNIEnv* env, jclass, jlong h, jobj
     mlvgpu::Engine* e = gpuRun(g, hb, w & ~1, hh & ~1, false);
     if (!e || !readRcd(hb, w, hh, g->in)) return nullptr;
     const std::vector<uint32_t> gpu = e->readProcessed();
+    const std::vector<uint16_t> input = g->in;  // applyProcessingObject writes into its input
     g->out.resize(g->in.size());
     applyProcessingObject(g->p, w, hh, g->in.data(), g->out.data(), 1, 1, 0);
     if (gpu.size() != size_t(w) * hh * 2) return nullptr;
-    // + the worst pixel: index, input RGB, CPU RGB, GPU RGB.
-    jlong result[14] = {0, 0, jlong(w) * hh, 0};
+    // + the worst pixel: index, input RGB, CPU RGB, GPU RGB; + pixels off by > 256.
+    jlong result[15] = {0, 0, jlong(w) * hh, 0};
     for (size_t i = 0; i < size_t(w) * hh; ++i) {
         const jlong v[3] = {jlong(gpu[i * 2] & 0xffffu), jlong(gpu[i * 2] >> 16), jlong(gpu[i * 2 + 1] & 0xffffu)};
         jlong worst = 0;
@@ -400,16 +403,17 @@ Java_com_matthew_crs_MlvGrade_nativeGpuParity(JNIEnv* env, jclass, jlong h, jobj
         if (worst > result[0]) {
             result[4] = jlong(i);
             for (int c = 0; c < 3; ++c) {
-                result[5 + c] = g->in[i * 3 + c];
+                result[5 + c] = input[i * 3 + c];
                 result[8 + c] = g->out[i * 3 + c];
                 result[11 + c] = v[c];
             }
         }
         result[0] = std::max(result[0], worst);
         if (worst) ++result[1];
+        if (worst > 256) ++result[14];
     }
-    jlongArray out = env->NewLongArray(14);
-    env->SetLongArrayRegion(out, 0, 14, result);
+    jlongArray out = env->NewLongArray(15);
+    env->SetLongArrayRegion(out, 0, 15, result);
     return out;
 }
 
