@@ -217,7 +217,7 @@ fun GalleryScreen(onOpen: (Uri) -> Unit, onProjects: () -> Unit = {}) {
                 verticalAlignment = Alignment.CenterVertically) {
                 Text("Cinematic RAW Studio", fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                IconButton(onClick = onProjects, modifier = Modifier.size(36.dp)) { Icon(Icons.Default.VideoLibrary, "Projects", Modifier.size(20.dp)) }
+                // Projects and Exports are bottom-navigation tabs (MainActivity).
                 FilledTonalButton(onClick = { pickFile.launch(arrayOf("*/*")) },
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp), modifier = Modifier.height(32.dp)) {
                     Icon(Icons.Default.Add, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("Open", fontSize = 12.sp)
