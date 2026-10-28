@@ -14,11 +14,14 @@ import androidx.compose.runtime.setValue
  * falls behind, so picture never drifts from sound. Two bitmaps alternate:
  * one on screen, one being rendered.
  */
-class PlayerEngine(private val clip: CrawClip) {
+class PlayerEngine(private val clip: CrawClip, private val gpu: GpuFrameRenderer? = null) {
     val clipInfo: ClipInfo = clip.info
     private val info = clipInfo
     private val audio = if (info.hasAudio) TakeAudio(clip) else null
-    private val bitmaps = arrayOf(clip.newPreviewBitmap(), clip.newPreviewBitmap())
+    private val bitmaps by lazy { arrayOf(clip.newPreviewBitmap(), clip.newPreviewBitmap()) }
+
+    /** "GPU RCD" (RawLens Vulkan pipeline) or "CPU" (half-resolution developer). */
+    val renderPath: String = if (gpu != null) "GPU RCD" else "CPU"
     private var back = 0
 
     var frame by mutableStateOf<Bitmap?>(null)
@@ -31,6 +34,8 @@ class PlayerEngine(private val clip: CrawClip) {
     var shownFps by mutableStateOf(0.0)
         private set
     var exposureEv by mutableStateOf(0f)
+    /** Play at full resolution instead of the half-size proxy (paused frames are always full). */
+    var fullResPlayback by mutableStateOf(false)
 
     @Volatile private var thread: Thread? = null
     @Volatile private var running = false
@@ -61,8 +66,15 @@ class PlayerEngine(private val clip: CrawClip) {
     @Synchronized
     fun show(i: Int) {
         val target = i.coerceIn(0, maxOf(info.frames - 1, 0))
-        val bmp = bitmaps[back]
         val t0 = SystemClock.elapsedRealtime()
+        if (gpu != null) {
+            val hw = gpu.render(target, exposureEv, playing)
+
+            if (!playing) android.util.Log.i("PlayerEngine", "gpu render $target ok=${hw != null} ${SystemClock.elapsedRealtime() - t0} ms")
+            if (hw != null) { frame = hw; index = target }
+            return
+        }
+        val bmp = bitmaps[back]
         val ok = clip.render(target, bmp, exposureEv)
         if (!playing) android.util.Log.i("PlayerEngine", "render $target ok=$ok ${SystemClock.elapsedRealtime() - t0} ms")
         if (ok) {
@@ -82,13 +94,30 @@ class PlayerEngine(private val clip: CrawClip) {
         lastAudioChangeMs = noAudioStartMs
         audio?.play(startSeconds)
         running = true
+        gpu?.startPlayback(index, info.frames, fullResPlayback) { (clockSeconds() * info.fps).toInt() }
         thread = Thread({
             var shown = 0
+            var gpuMs = 0L
+            var starvedMs = 0L
             var windowStart = SystemClock.elapsedRealtime()
             while (running) {
                 val due = (clockSeconds() * info.fps).toInt()
                 if (due >= info.frames) break
-                if (due != index) {
+                if (gpu != null) {
+                    // Decoder workers run ahead; show the newest finished frame.
+                    val g0 = SystemClock.elapsedRealtime()
+                    val next = if (due != index) gpu.nextPlayback(due, exposureEv) else null
+                    if (next != null) gpuMs += SystemClock.elapsedRealtime() - g0
+                    else if (due != index) starvedMs += 2
+                    val bmp = next?.second
+                    if (next != null && bmp != null) {
+                        frame = bmp
+                        index = next.first
+                        shown++
+                    } else {
+                        Thread.sleep(2)
+                    }
+                } else if (due != index) {
                     show(due)
                     shown++
                 } else {
@@ -97,14 +126,18 @@ class PlayerEngine(private val clip: CrawClip) {
                 val now = SystemClock.elapsedRealtime()
                 if (now - windowStart >= 1000) {
                     shownFps = shown * 1000.0 / (now - windowStart)
-                    android.util.Log.i("PlayerEngine", "preview %.1f fps, frame %d, clock %.2f s".format(shownFps, index, clockSeconds()))
+                    android.util.Log.i("PlayerEngine", "preview %.1f fps, frame %d, clock %.2f s, gpu %d ms, starved %d ms".format(
+                        shownFps, index, clockSeconds(), gpuMs, starvedMs))
+                    gpuMs = 0; starvedMs = 0
                     shown = 0
                     windowStart = now
                 }
             }
             running = false
+            gpu?.stopPlayback()
             audio?.stop()
             playing = false
+            if (gpu != null) show(index)  // full-resolution frame once stopped
         }, "PlayerRender").apply { start() }
     }
 
@@ -112,8 +145,12 @@ class PlayerEngine(private val clip: CrawClip) {
         running = false
         thread?.join(1000)
         thread = null
+        gpu?.stopPlayback()
         audio?.stop()
+        val wasPlaying = playing
         playing = false
+        // Replace the playback proxy with the full-resolution frame.
+        if (wasPlaying && gpu != null) Thread({ show(index) }, "PlayerStill").start()
     }
 
     fun seek(i: Int) {
@@ -125,5 +162,6 @@ class PlayerEngine(private val clip: CrawClip) {
 
     fun release() {
         pause()
+        gpu?.close()
     }
 }

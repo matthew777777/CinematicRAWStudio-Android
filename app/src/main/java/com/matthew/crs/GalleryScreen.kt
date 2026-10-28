@@ -31,7 +31,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -43,18 +42,64 @@ private const val KEY_TREE = "tree"
 
 private object Thumbs {
     val cache = LruCache<String, TakeCard>(96)
+    /** Last listing per folder: returning to the gallery shows it at once, then refreshes. */
+    val listings = HashMap<String, List<Take>>()
 }
 
+/** One DocumentsContract query for name, size and date of every child (no per-file IPC). */
 private fun listTakes(context: Context, tree: Uri): List<Take> {
-    val root = DocumentFile.fromTreeUri(context, tree) ?: return emptyList()
-    return root.listFiles().filter { it.isFile && it.name?.endsWith(".craw", ignoreCase = true) == true }
-        .map { Take(it.uri, it.name ?: "?", it.length(), it.lastModified()) }
-        .sortedByDescending { it.modified }
+    val parent = android.provider.DocumentsContract.getTreeDocumentId(tree)
+    val children = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(tree, parent)
+    val cols = arrayOf(
+        android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+        android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+        android.provider.DocumentsContract.Document.COLUMN_SIZE,
+        android.provider.DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+    )
+    val out = ArrayList<Take>()
+    context.contentResolver.query(children, cols, null, null, null)?.use { c ->
+        while (c.moveToNext()) {
+            val name = c.getString(1) ?: continue
+            if (!name.endsWith(".craw", ignoreCase = true)) continue
+            val uri = android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, c.getString(0))
+            out += Take(uri, name, c.getLong(2), c.getLong(3))
+        }
+    }
+    return out.sortedByDescending { it.modified }
+}
+
+/** Disk cache of 480 px thumbnails + metadata, keyed by Uri, size and mtime. */
+private fun diskKey(take: Take) = Integer.toHexString("${take.uri}|${take.bytes}|${take.modified}".hashCode())
+
+private fun readDisk(context: Context, take: Take): TakeCard? = runCatching {
+    val dir = java.io.File(context.cacheDir, "thumbs")
+    val json = java.io.File(dir, diskKey(take) + ".json").takeIf { it.exists() }?.readText() ?: return null
+    val o = org.json.JSONObject(json)
+    val info = ClipInfo(o.getInt("width"), o.getInt("height"), o.getInt("frames"), o.getDouble("fps"), o.getBoolean("rgb"),
+        o.getString("camera"), o.getInt("iso"), o.getDouble("exposure"), o.getInt("audioRate"), o.getInt("audioChannels"),
+        o.getInt("audioBits"), o.getLong("wavSize"), o.getBoolean("recovered"))
+    val jpg = java.io.File(dir, diskKey(take) + ".jpg")
+    TakeCard(if (jpg.exists()) android.graphics.BitmapFactory.decodeFile(jpg.path) else null, info)
+}.getOrNull()
+
+private fun writeDisk(context: Context, take: Take, card: TakeCard) {
+    runCatching {
+        val i = card.info ?: return
+        val dir = java.io.File(context.cacheDir, "thumbs").apply { mkdirs() }
+        card.thumb?.let { b -> java.io.File(dir, diskKey(take) + ".jpg").outputStream().use { b.compress(Bitmap.CompressFormat.JPEG, 85, it) } }
+        java.io.File(dir, diskKey(take) + ".json").writeText(org.json.JSONObject().apply {
+            put("width", i.width); put("height", i.height); put("frames", i.frames); put("fps", i.fps); put("rgb", i.rgb)
+            put("camera", i.camera); put("iso", i.iso); put("exposure", i.exposureSeconds); put("audioRate", i.audioRate)
+            put("audioChannels", i.audioChannels); put("audioBits", i.audioBits); put("wavSize", i.wavSize); put("recovered", i.recovered)
+        }.toString())
+    }
 }
 
 /** First frame, developed and scaled to a card thumbnail, plus metadata. */
-private fun loadCard(context: Context, uri: Uri): TakeCard {
+private fun loadCard(context: Context, take: Take): TakeCard {
+    val uri = take.uri
     Thumbs.cache.get(uri.toString())?.let { return it }
+    readDisk(context, take)?.let { Thumbs.cache.put(uri.toString(), it); return it }
     val card = CrawClip.open(context, uri)?.use { clip ->
         val full = clip.newPreviewBitmap()
         val ok = clip.info.frames > 0 && clip.render(0, full)
@@ -66,6 +111,7 @@ private fun loadCard(context: Context, uri: Uri): TakeCard {
         TakeCard(thumb, clip.info)
     } ?: TakeCard(null, null)
     Thumbs.cache.put(uri.toString(), card)
+    writeDisk(context, take, card)
     return card
 }
 
@@ -80,7 +126,7 @@ fun GalleryScreen(onOpen: (Uri) -> Unit) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
     var tree by remember { mutableStateOf(prefs.getString(KEY_TREE, null)?.let(Uri::parse)) }
-    var takes by remember { mutableStateOf<List<Take>?>(null) }
+    var takes by remember { mutableStateOf<List<Take>?>(tree?.let { Thumbs.listings[it.toString()] }) }
 
     val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
@@ -95,6 +141,7 @@ fun GalleryScreen(onOpen: (Uri) -> Unit) {
     LaunchedEffect(tree) {
         val t = tree ?: return@LaunchedEffect
         takes = withContext(Dispatchers.IO) { runCatching { listTakes(context, t) }.getOrDefault(emptyList()) }
+            .also { Thumbs.listings[t.toString()] = it }
     }
 
     Scaffold(
@@ -135,7 +182,7 @@ fun GalleryScreen(onOpen: (Uri) -> Unit) {
 private fun TakeTile(take: Take, onClick: () -> Unit) {
     val context = LocalContext.current
     val card by produceState<TakeCard?>(initialValue = Thumbs.cache.get(take.uri.toString()), take.uri) {
-        if (value == null) value = withContext(Dispatchers.IO) { loadCard(context, take.uri) }
+        if (value == null) value = withContext(Dispatchers.IO) { loadCard(context, take) }
     }
     Column(Modifier.clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surface).clickable(onClick = onClick)) {
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black), contentAlignment = Alignment.Center) {

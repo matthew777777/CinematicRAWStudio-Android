@@ -42,7 +42,18 @@ fun PlayerScreen(uri: Uri, onBack: () -> Unit) {
         val c = withContext(Dispatchers.IO) { CrawClip.open(context, uri) }
         if (c == null) failed = true else clip = c
     }
-    val engine = remember(clip) { clip?.let { PlayerEngine(it) } }
+    var engine by remember { mutableStateOf<PlayerEngine?>(null) }
+    LaunchedEffect(clip) {
+        val c = clip ?: return@LaunchedEffect
+        // Bayer takes render through RawLens's Vulkan RCD pipeline; RGB
+        // (binned) takes and GPU failures use the CPU developer.
+        val gpu = withContext(Dispatchers.IO) {
+            if (c.info.rgb || !GpuPipeline.init(context)) null
+            else runCatching { GpuFrameRenderer(c, c.info.width, c.info.height) }
+                .onFailure { android.util.Log.w("PlayerScreen", "GPU renderer unavailable", it) }.getOrNull()
+        }
+        engine = PlayerEngine(c, gpu)
+    }
     // Release exactly what this effect saw: reading the state inside onDispose
     // would close the clip that just replaced it.
     DisposableEffect(engine) {
@@ -90,7 +101,7 @@ private fun Transport(e: PlayerEngine) {
             Text(
                 "${clipInfo.width}×${clipInfo.height}${if (clipInfo.rgb) " RGB" else ""} · %.2f fps".format(clipInfo.fps) +
                     (if (clipInfo.iso > 0) " · ISO ${clipInfo.iso}" else "") +
-                    (if (e.playing) " · preview %.0f fps".format(e.shownFps) else ""),
+                    " · ${e.renderPath}" + (if (e.playing) " · %.0f fps".format(e.shownFps) else ""),
                 fontSize = 11.sp, color = Color.Gray,
             )
         }
@@ -113,6 +124,30 @@ private fun Transport(e: PlayerEngine) {
                 value = e.exposureEv, onValueChange = { e.exposureEv = it }, valueRange = -4f..4f,
                 onValueChangeFinished = { if (!e.playing) e.seek(i) },
             )
+        }
+        if (e.renderPath == "GPU RCD") {
+            val context = LocalContext.current
+            val prefs = remember { context.getSharedPreferences("player", android.content.Context.MODE_PRIVATE) }
+            LaunchedEffect(e) { e.fullResPlayback = prefs.getBoolean("fullResPlayback", false) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Playback", fontSize = 12.sp, modifier = Modifier.width(120.dp))
+                listOf(false to "½ res", true to "Full").forEach { (full, label) ->
+                    FilterChip(
+                        selected = e.fullResPlayback == full,
+                        onClick = {
+                            if (e.fullResPlayback != full) {
+                                val wasPlaying = e.playing
+                                if (wasPlaying) e.pause()
+                                e.fullResPlayback = full
+                                prefs.edit().putBoolean("fullResPlayback", full).apply()
+                                if (wasPlaying) e.play()
+                            }
+                        },
+                        label = { Text(label) },
+                        modifier = Modifier.padding(end = 8.dp),
+                    )
+                }
+            }
         }
         if (clipInfo.recovered) Text("Recovered take (recording did not finish cleanly)", fontSize = 11.sp, color = Color(0xFFE8A33D))
         if (!clipInfo.hasAudio) Text("No audio in this take", fontSize = 11.sp, color = Color.Gray)

@@ -23,9 +23,21 @@ class TakeAudio(private val clip: CrawClip) {
     @Volatile private var startSeconds = 0.0
 
     /** Seconds of audio played since [play]'s start position. */
+    private val stamp = android.media.AudioTimestamp()
+
+    /**
+     * Presentation time of the audio being heard: AudioTrack.getTimestamp()
+     * (frame position at a known system time) extrapolated to now, so the
+     * clock advances smoothly instead of in buffer-sized steps of
+     * playbackHeadPosition (which made picture skip frames).
+     */
     val positionSeconds: Double
         get() {
             val t = track ?: return startSeconds
+            if (t.getTimestamp(stamp) && stamp.framePosition > 0) {
+                val since = (System.nanoTime() - stamp.nanoTime) / 1e9
+                return startSeconds + stamp.framePosition.toDouble() / info.audioRate + since
+            }
             return startSeconds + (t.playbackHeadPosition.toLong() and 0xffffffffL).toDouble() / info.audioRate
         }
 
