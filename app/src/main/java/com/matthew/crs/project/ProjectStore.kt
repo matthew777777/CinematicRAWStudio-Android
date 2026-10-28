@@ -21,6 +21,8 @@ object ProjectStore {
         try { output.write(bytes); atomic.finishWrite(output) }
         catch (error: Throwable) { atomic.failWrite(output); throw error }
     }
+    /** Removes the project file only; its source takes are never touched. */
+    @Synchronized fun delete(context: Context, id: String) { AtomicFile(file(context, id)).delete() }
     @Synchronized fun load(context: Context, id: String): SequenceProject =
         decode(AtomicFile(file(context, id)).readFully().toString(Charsets.UTF_8))
     @Synchronized fun list(context: Context): List<SequenceProject> = directory(context).listFiles().orEmpty()
