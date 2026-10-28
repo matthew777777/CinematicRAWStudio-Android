@@ -363,6 +363,34 @@ Java_com_matthew_crs_CrawClip_nativeCcm(JNIEnv* env, jclass, jlong h, jfloat nr,
     return arr;
 }
 
+// XYZ->camera matrices for MLV-App: [daylight (illuminant 21, D65) x9,
+// tungsten (illuminant 17, Standard A) x9], chosen by illuminant, not by
+// position (Canon DNGs put D65 second, RawLens first). One matrix -> both.
+JNIEXPORT jdoubleArray JNICALL
+Java_com_matthew_crs_CrawClip_nativeCamMatrices(JNIEnv* env, jclass, jlong h) {
+    auto* p = from(h);
+    if (!p) return nullptr;
+    const auto& i = p->clip.info();
+    const std::vector<double>* d65 = nullptr;
+    const std::vector<double>* a = nullptr;
+    auto pick = [&](int ill, const std::vector<double>& m) {
+        if (m.size() != 9) return;
+        if (ill == 21 || ill == 20 || ill == 23) d65 = &m;  // D65 / D55 / D50 class
+        else if (ill == 17 || ill == 3) a = &m;            // Standard A / tungsten
+    };
+    pick(i.illuminant1, i.colorMatrix1);
+    pick(i.illuminant2, i.colorMatrix2);
+    if (!d65) d65 = i.colorMatrix1.size() == 9 ? &i.colorMatrix1 : a;
+    if (!a) a = d65;
+    if (!d65) return nullptr;
+    double out[18];
+    std::copy(d65->begin(), d65->end(), out);
+    std::copy(a->begin(), a->end(), out + 9);
+    jdoubleArray arr = env->NewDoubleArray(18);
+    env->SetDoubleArrayRegion(arr, 0, 18, out);
+    return arr;
+}
+
 // Reads WAV bytes [offset, offset + len) into `dst`; returns the count.
 JNIEXPORT jint JNICALL
 Java_com_matthew_crs_CrawClip_nativeReadWav(JNIEnv* env, jclass, jlong h, jlong offset, jbyteArray dst, jint len) {

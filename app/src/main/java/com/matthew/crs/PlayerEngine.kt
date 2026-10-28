@@ -15,6 +15,15 @@ import androidx.compose.runtime.setValue
  * one on screen, one being rendered.
  */
 class PlayerEngine(private val clip: CrawClip, private val gpu: GpuFrameRenderer? = null) {
+    /** MLV-App processing for paused frames (vendored MLV-App code). */
+    private val grade: MlvGrade? = gpu?.let { runCatching { MlvGrade(clip) }.getOrNull() }
+
+    /** Grade in MLV-App units; null = as shot (MLV-App kelvin/tint found from AsShotNeutral). */
+    var gradeSettings by mutableStateOf<GradeSettings?>(null)
+
+    private fun effectiveSettings(asShot: Pair<Double, Double>): GradeSettings =
+        (gradeSettings ?: GradeSettings(temperature = asShot.first, tint = asShot.second).also { gradeSettings = it })
+            .copy(exposure = exposureEv.toDouble())
     val clipInfo: ClipInfo = clip.info
     private val info = clipInfo
     private val audio = if (info.hasAudio) TakeAudio(clip) else null
@@ -67,6 +76,11 @@ class PlayerEngine(private val clip: CrawClip, private val gpu: GpuFrameRenderer
     fun show(i: Int) {
         val target = i.coerceIn(0, maxOf(info.frames - 1, 0))
         val t0 = SystemClock.elapsedRealtime()
+        if (gpu != null && grade != null && !playing) {
+            val bmp = gpu.renderGraded(target, grade, ::effectiveSettings)
+            if (bmp != null) { frame = bmp; index = target }
+            return
+        }
         if (gpu != null) {
             val hw = gpu.render(target, exposureEv, playing)
 
@@ -163,5 +177,6 @@ class PlayerEngine(private val clip: CrawClip, private val gpu: GpuFrameRenderer
     fun release() {
         pause()
         gpu?.close()
+        grade?.close()
     }
 }
