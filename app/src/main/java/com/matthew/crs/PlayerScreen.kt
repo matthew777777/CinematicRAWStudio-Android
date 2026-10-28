@@ -95,6 +95,12 @@ fun PlayerScreen(uri: Uri, onBack: () -> Unit) {
     val tool = EditTool.valueOf(toolName)
     var info by remember { mutableStateOf(false) }
     var export by remember { mutableStateOf(false) }
+    var menu by remember { mutableStateOf(false) }
+    var presets by remember { mutableStateOf(false) }
+    var histogram by remember { mutableStateOf(context.getSharedPreferences("player", 0).getBoolean("histogram", false)) }
+    // Full screen: a tap on the picture hides the bars, scrubber and panels.
+    var immersive by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) { SettingsClipboard.load(context) }
     LaunchedEffect(com.matthew.crs.project.ExportQueue.running) { if (com.matthew.crs.project.ExportQueue.running) withContext(Dispatchers.IO) { e?.pause() } }
     var reset by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -131,10 +137,11 @@ fun PlayerScreen(uri: Uri, onBack: () -> Unit) {
     // the newest receipt (values that went stale during a render are skipped).
     LaunchedEffect(e) {
         val player = e ?: return@LaunchedEffect
-        androidx.compose.runtime.snapshotFlow { Triple(player.receipt, player.playing, player.compare) }
+        androidx.compose.runtime.snapshotFlow { listOf(player.receipt, player.playing, player.compare, player.sectionsOff, player.split) }
             .drop(1)
             .conflate()
-            .collect { (_, playing, _) ->
+            .collect { state ->
+                val playing = state[1] as Boolean
                 if (!playing && player.frame != null) withContext(Dispatchers.IO) { player.show(player.index) }
             }
     }
@@ -147,7 +154,7 @@ fun PlayerScreen(uri: Uri, onBack: () -> Unit) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides if (landscape) 36.dp else 48.dp) {
-    Scaffold(topBar = {
+    Scaffold(topBar = { if (!immersive) {
         Surface(color = MaterialTheme.colorScheme.surface) {
             Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars)
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
@@ -165,9 +172,38 @@ fun PlayerScreen(uri: Uri, onBack: () -> Unit) {
                 IconButton(modifier = Modifier.size(if (landscape) 36.dp else 48.dp), enabled = redo.isNotEmpty(), onClick = {
                     e?.let { undo.add(it.receipt); it.receipt = redo.removeAt(redo.lastIndex); lastEdit = 0 }
                 }) { Icon(Icons.AutoMirrored.Filled.Redo, "Redo adjustment") }
-                IconButton(modifier = Modifier.size(if (landscape) 36.dp else 48.dp), onClick = { info = true }, enabled = e != null) { Icon(Icons.Default.Info, "Clip information and playback quality") }
+                IconToggleButton(modifier = Modifier.size(if (landscape) 36.dp else 48.dp), checked = e?.split == true,
+                    enabled = e?.canGrade == true, onCheckedChange = { on -> e?.split = on }) {
+                    Icon(Icons.Default.Compare, if (e?.split == true) "Close before/after" else "Before/after split",
+                        tint = if (e?.split == true) MaterialTheme.colorScheme.primary else LocalContentColor.current)
+                }
                 IconButton(modifier = Modifier.size(if (landscape) 36.dp else 48.dp), onClick = { export = true }, enabled = e != null) {
                     Icon(Icons.Default.FileUpload, "Export edited clip")
+                }
+                Box {
+                    IconButton(modifier = Modifier.size(if (landscape) 36.dp else 48.dp), onClick = { menu = true }, enabled = e != null) {
+                        Icon(Icons.Default.MoreVert, "More editing options")
+                    }
+                    DropdownMenu(menu, { menu = false }) {
+                        DropdownMenuItem(text = { Text(if (histogram) "Hide histogram" else "Show histogram") },
+                            leadingIcon = { Icon(Icons.Default.BarChart, null) }, onClick = {
+                                menu = false; histogram = !histogram
+                                context.getSharedPreferences("player", 0).edit().putBoolean("histogram", histogram).apply()
+                            })
+                        DropdownMenuItem(text = { Text("Presets") }, leadingIcon = { Icon(Icons.Default.AutoFixHigh, null) },
+                            enabled = e?.canGrade == true, onClick = { menu = false; presets = true })
+                        DropdownMenuItem(text = { Text("Copy settings") }, leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
+                            onClick = { menu = false; e?.let { SettingsClipboard.copy(context, it.receipt) } })
+                        DropdownMenuItem(text = { Text("Paste settings") }, leadingIcon = { Icon(Icons.Default.ContentPaste, null) },
+                            enabled = SettingsClipboard.copied != null && e?.canGrade == true, onClick = {
+                                menu = false; e?.let { p -> SettingsClipboard.copied?.let { lastEdit = 0; change(it.onto(p.receipt)) } }
+                            })
+                        HorizontalDivider()
+                        DropdownMenuItem(text = { Text("Clip information") }, leadingIcon = { Icon(Icons.Default.Info, null) },
+                            onClick = { menu = false; info = true })
+                        DropdownMenuItem(text = { Text("Reset all adjustments") }, leadingIcon = { Icon(Icons.Default.RestartAlt, null) },
+                            enabled = e?.canGrade == true, onClick = { menu = false; reset = true })
+                    }
                 }
                 IconToggleButton(modifier = Modifier.size(if (landscape) 36.dp else 48.dp), checked = editing, enabled = e?.canGrade == true, onCheckedChange = {
                     editing = it
@@ -175,13 +211,14 @@ fun PlayerScreen(uri: Uri, onBack: () -> Unit) {
                 }) { Icon(Icons.Default.Tune, if (editing) "Hide adjustments" else "Show adjustments") }
             }
         }
-    }) { pad ->
+    } }) { pad ->
         BoxWithConstraints(Modifier.padding(pad).windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
             .fillMaxSize()) {
             val showEditor = editing && e?.canGrade == true
             val panelWidth = (maxWidth * 0.30f).coerceIn(240.dp, 300.dp)
             @Composable fun Preview(modifier: Modifier) {
                 Box(modifier.background(Color(0xFF080A0C)), contentAlignment = Alignment.Center) {
+                    val original = e?.originalFrame
                     when {
                         load.failed -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(Icons.Default.BrokenImage, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -189,15 +226,18 @@ fun PlayerScreen(uri: Uri, onBack: () -> Unit) {
                             TextButton(onClick = onBack) { Text("Back to library") }
                         }
                         e == null || e.frame == null -> CircularProgressIndicator(Modifier.size(28.dp))
+                        // Split before/after on a paused frame (drag the divider).
+                        e.split && original != null && !e.playing -> SplitCompare(original, e.frame!!, Modifier.fillMaxSize().padding(8.dp))
                         else -> e.frame?.let { bmp ->
                             key(bmp, e.index) { Image(bmp.asImageBitmap(), "Video preview, frame ${e.index + 1}",
                                 Modifier.fillMaxSize().padding(8.dp)
-                                    // Press and hold: the original (MLV-App defaults) until release.
+                                    // Tap: full screen on/off. Press and hold: the original until release.
                                     .pointerInput(e) {
                                         awaitEachGesture {
                                             awaitFirstDown(requireUnconsumed = false)
                                             val up = withTimeoutOrNull(250) { waitForUpOrCancellation() }
-                                            if (up == null && !e.playing && e.canGrade) {
+                                            if (up != null) immersive = !immersive
+                                            else if (!e.playing && e.canGrade) {
                                                 e.compare = true
                                                 try { waitForUpOrCancellation() } finally { e.compare = false }
                                             }
@@ -209,24 +249,27 @@ fun PlayerScreen(uri: Uri, onBack: () -> Unit) {
                     if (e?.compare == true) Text("Original", fontSize = 11.sp, color = Color.White,
                         modifier = Modifier.align(Alignment.TopStart).padding(12.dp)
                             .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp)).padding(horizontal = 8.dp, vertical = 3.dp))
+                    if (!e?.sectionsOff.isNullOrEmpty() && e?.compare != true) Text("Preview without: ${e!!.sectionsOff.joinToString { it.title }}",
+                        fontSize = 11.sp, color = Color.White, maxLines = 1,
+                        modifier = Modifier.align(Alignment.BottomStart).padding(12.dp)
+                            .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp)).padding(horizontal = 8.dp, vertical = 3.dp))
+                    if (histogram && e?.frame != null) HistogramOverlay(e.frame, Modifier.align(Alignment.TopEnd).padding(12.dp).size(132.dp, 64.dp))
+                    if (immersive) IconButton(onClick = { immersive = false }, modifier = Modifier.align(Alignment.TopStart).padding(4.dp)) {
+                        Icon(Icons.Default.FullscreenExit, "Leave full screen", tint = Color.White)
+                    }
                     if (e != null && !e.canGrade) Text("Adjustments unavailable for this take", fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.align(Alignment.TopCenter).padding(8.dp))
                 }
             }
-            @Composable fun Adjustments(modifier: Modifier) {
-                Column(modifier.background(MaterialTheme.colorScheme.surface)) {
-                    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("ADJUSTMENTS", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f))
-                        TextButton(onClick = { reset = true }) { Text("Reset all", fontSize = 11.sp) }
-                    }
-                    ToolStrip(tool, { toolName = it.name; lastEdit = 0 }, compact = landscape)
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    e?.let { EditorPanel(it.receipt, it.asShotKelvin, ::change, Modifier.weight(1f).fillMaxWidth(), tool) }
-                }
+            @Composable fun Panel(modifier: Modifier) {
+                e?.let { EditorPanel(it.receipt, it.asShotKelvin, ::change, modifier, tool,
+                    sectionsOff = it.sectionsOff, onSectionOff = { s, off -> it.sectionsOff = if (off) it.sectionsOff + s else it.sectionsOff - s }) }
             }
-            if (landscape) {
+            @Composable fun Strip(compact: Boolean) = ToolStrip(tool, { toolName = it.name; lastEdit = 0 }, compact = compact)
+            if (immersive) {
+                Preview(Modifier.fillMaxSize())
+            } else if (landscape) {
                 Row(Modifier.fillMaxSize()) {
                     Column(Modifier.weight(1f).fillMaxHeight()) {
                         Preview(Modifier.weight(1f).fillMaxWidth())
@@ -234,19 +277,30 @@ fun PlayerScreen(uri: Uri, onBack: () -> Unit) {
                     }
                     if (showEditor) {
                         VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        Adjustments(Modifier.width(panelWidth).fillMaxHeight())
+                        Column(Modifier.width(panelWidth).fillMaxHeight().background(MaterialTheme.colorScheme.surface)) {
+                            Strip(compact = true)
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            Panel(Modifier.weight(1f).fillMaxWidth())
+                        }
                     }
                 }
             } else {
+                // Portrait (Lightroom): picture, scrubber, the category's panel, categories at the bottom.
                 Column(Modifier.fillMaxSize()) {
                     Preview(Modifier.fillMaxWidth().weight(if (showEditor) 0.95f else 1f))
                     e?.let { ClipTimeline(it, timelineFrames, { frame -> seeks.trySend(frame) }, compact = false) }
-                    if (showEditor) Adjustments(Modifier.fillMaxWidth().weight(1f))
+                    if (showEditor) {
+                        Panel(Modifier.fillMaxWidth().weight(1f))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Strip(compact = false)
+                        Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
+                    }
                 }
             }
         }
     }
     }
+    if (presets && e != null) PresetsSheet(e.receipt, onApply = { lastEdit = 0; change(it); presets = false }, onDismiss = { presets = false })
     if (export && e != null) {
         val receipt = e.receipt
         com.matthew.crs.project.ExportPanel(prepare = {
