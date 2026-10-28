@@ -129,6 +129,7 @@ class ExportService : Service() {
             while (true) {
                 val job = ExportQueue.jobs.firstOrNull { it.status == "Queued" } ?: break
                 ExportQueue.update(this@ExportService, job.id) { it.copy(status = "Exporting", message = "Preparing sources") }
+                val started = android.os.SystemClock.elapsedRealtime()
                 val task = scope.async(Dispatchers.IO) {
                     var last = 0L
                     SequenceExporter.export(this@ExportService, job.project, job.settings, android.net.Uri.parse(job.destination)) { fraction, phase ->
@@ -143,7 +144,9 @@ class ExportService : Service() {
                     }
                 }
                 ExportQueue.activeTask = task
-                try { task.await(); ExportQueue.update(this@ExportService, job.id) { it.copy(status = "Completed", progress = 1f, message = if (job.settings.output == ExportOutput.ORIGINAL_CINEMA_DNG) "Original CinemaDNG sequence saved" else "Saved MP4") } }
+                try { task.await()
+                    if (job.settings.output == ExportOutput.MP4) ExportSpeed.record(this@ExportService, job.project, (android.os.SystemClock.elapsedRealtime() - started) / 1000.0)
+                    ExportQueue.update(this@ExportService, job.id) { it.copy(status = "Completed", progress = 1f, message = if (job.settings.output == ExportOutput.ORIGINAL_CINEMA_DNG) "Original CinemaDNG sequence saved" else "Saved MP4") } }
                 catch (cancelled: CancellationException) {
                     if (!scope.isActive) throw cancelled
                     ExportQueue.deletePartialOutput(this@ExportService, job)

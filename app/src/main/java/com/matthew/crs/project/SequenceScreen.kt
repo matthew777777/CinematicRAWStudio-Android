@@ -135,7 +135,7 @@ private fun SequenceEditor(s: ProjectSession, onBack: () -> Unit) {
         BoxWithConstraints(Modifier.padding(pad).fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))) {
             val availableHeight = maxHeight
             val availableWidth = maxWidth
-            var timelineDp by remember(landscape) { mutableFloatStateOf(if (landscape) 112f else 190f) }
+            var timelineDp by remember(landscape) { mutableFloatStateOf(if (landscape) 160f else 220f) }
             val density = LocalDensity.current
             // Landscape tracks may take 65 % of the height; portrait keeps 40 % so
             // the preview (and the inspector, when open) stay usable.
@@ -146,7 +146,8 @@ private fun SequenceEditor(s: ProjectSession, onBack: () -> Unit) {
                         change.consume(); timelineDp = (timelineDp - delta / density.density).coerceIn(92f, maxOf(92f, maxTimeline.value))
                     }
                 }, contentAlignment = Alignment.Center) { Box(Modifier.width(40.dp).height(3.dp).background(MaterialTheme.colorScheme.onSurfaceVariant)) }
-                SequenceTimeline(s, Modifier.fillMaxWidth().height(minOf(timelineDp.dp, maxTimeline)))
+                SequenceTimeline(s, Modifier.fillMaxWidth().height(minOf(timelineDp.dp, maxTimeline)), compact = landscape,
+                    onGrade = { inspect = true; s.inspectorGrade = true })
             }
             @Composable fun Monitor(modifier: Modifier) {
                 Column(modifier) {
@@ -225,7 +226,7 @@ private fun SequenceEditor(s: ProjectSession, onBack: () -> Unit) {
 private fun ClipInspector(s: ProjectSession, relink: (SourceAsset) -> Unit, modifier: Modifier) {
     val c = s.selected ?: return
     val p = s.project; val asset = p.asset(c.assetId); val audio = p.track(c.trackId).kind == TrackKind.AUDIO
-    var grade by remember(c.id) { mutableStateOf(false) }
+    var grade by s::inspectorGrade
     var resetGrade by remember(c.id) { mutableStateOf(false) }
     var toolName by rememberSaveable { mutableStateOf(EditTool.Light.name) }
     Column(modifier.background(MaterialTheme.colorScheme.surface)) {
