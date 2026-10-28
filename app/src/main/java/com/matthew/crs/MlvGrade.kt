@@ -7,6 +7,16 @@ import java.io.Closeable
 import kotlin.math.ln
 import kotlin.math.pow
 
+/** Curve control points (x, y), as MLV-App's curve widgets hold them. */
+data class Curve(val xs: List<Float>, val ys: List<Float>) {
+    companion object {
+        /** Curves.cpp initLine: (0.00001, 0.00001)-(1, 1). */
+        val GRADATION_IDENTITY = Curve(listOf(0.00001f, 1f), listOf(0.00001f, 1f))
+        /** HueVsDiagram.cpp initLine: (0, 0)-(1, 0); y in -1..1. */
+        val HUE_IDENTITY = Curve(listOf(0f, 1f), listOf(0f, 0f))
+    }
+}
+
 /**
  * An MLV-App "receipt": every control in MLV-App's own slider units and
  * defaults (platform/qt/ReceiptSettings.cpp, MainWindow.ui ranges). The
@@ -51,7 +61,84 @@ data class Receipt(
     val vignetteShape: Int = 0,        // 0..100      -> v/100
     val tone: Int = 0,                 // 0..255 hue  -> Qt HSL(v/255, 1, 0.5)
     val toningStrength: Int = 0,       // 0..100
+    /** Gradation curves: 0 luma, 1 red, 2 green, 3 blue (processingSetGCurve). */
+    val gradation: List<Curve> = List(4) { Curve.GRADATION_IDENTITY },
+    /** 0 hue vs hue, 1 hue vs saturation, 2 hue vs luma, 3 luma vs saturation (processingSetHueVsCurves). */
+    val hueVs: List<Curve> = List(4) { Curve.HUE_IDENTITY },
 ) {
+    fun toJson(): String = org.json.JSONObject().apply {
+        for ((k, get, _) in INTS) put(k, get(this@Receipt))
+        for ((k, get, _) in BOOLS) put(k, get(this@Receipt))
+        fun arr(cs: List<Curve>) = org.json.JSONArray(cs.map {
+            org.json.JSONObject().put("x", org.json.JSONArray(it.xs.map(Float::toDouble))).put("y", org.json.JSONArray(it.ys.map(Float::toDouble)))
+        })
+        put("gradation", arr(gradation))
+        put("hueVs", arr(hueVs))
+    }.toString()
+
+    companion object {
+        // Explicit keys (stable across builds; R8 renames fields).
+        private val INTS: List<Triple<String, (Receipt) -> Int, (Receipt, Int) -> Receipt>> = listOf(
+            Triple("exposure", { it.exposure }, { r, v -> r.copy(exposure = v) }),
+            Triple("contrast", { it.contrast }, { r, v -> r.copy(contrast = v) }),
+            Triple("pivot", { it.pivot }, { r, v -> r.copy(pivot = v) }),
+            Triple("temperature", { it.temperature }, { r, v -> r.copy(temperature = v) }),
+            Triple("tint", { it.tint }, { r, v -> r.copy(tint = v) }),
+            Triple("clarity", { it.clarity }, { r, v -> r.copy(clarity = v) }),
+            Triple("vibrance", { it.vibrance }, { r, v -> r.copy(vibrance = v) }),
+            Triple("saturation", { it.saturation }, { r, v -> r.copy(saturation = v) }),
+            Triple("ds", { it.ds }, { r, v -> r.copy(ds = v) }),
+            Triple("dr", { it.dr }, { r, v -> r.copy(dr = v) }),
+            Triple("ls", { it.ls }, { r, v -> r.copy(ls = v) }),
+            Triple("lr", { it.lr }, { r, v -> r.copy(lr = v) }),
+            Triple("lightening", { it.lightening }, { r, v -> r.copy(lightening = v) }),
+            Triple("shadows", { it.shadows }, { r, v -> r.copy(shadows = v) }),
+            Triple("highlights", { it.highlights }, { r, v -> r.copy(highlights = v) }),
+            Triple("sharpen", { it.sharpen }, { r, v -> r.copy(sharpen = v) }),
+            Triple("shMasking", { it.shMasking }, { r, v -> r.copy(shMasking = v) }),
+            Triple("chromaBlur", { it.chromaBlur }, { r, v -> r.copy(chromaBlur = v) }),
+            Triple("profile", { it.profile }, { r, v -> r.copy(profile = v) }),
+            Triple("gamma", { it.gamma }, { r, v -> r.copy(gamma = v) }),
+            Triple("camMatrixUsed", { it.camMatrixUsed }, { r, v -> r.copy(camMatrixUsed = v) }),
+            Triple("denoiserStrength", { it.denoiserStrength }, { r, v -> r.copy(denoiserStrength = v) }),
+            Triple("denoiserWindow", { it.denoiserWindow }, { r, v -> r.copy(denoiserWindow = v) }),
+            Triple("rbfDenoiserLuma", { it.rbfDenoiserLuma }, { r, v -> r.copy(rbfDenoiserLuma = v) }),
+            Triple("rbfDenoiserChroma", { it.rbfDenoiserChroma }, { r, v -> r.copy(rbfDenoiserChroma = v) }),
+            Triple("rbfDenoiserRange", { it.rbfDenoiserRange }, { r, v -> r.copy(rbfDenoiserRange = v) }),
+            Triple("caDesaturate", { it.caDesaturate }, { r, v -> r.copy(caDesaturate = v) }),
+            Triple("vignetteStrength", { it.vignetteStrength }, { r, v -> r.copy(vignetteStrength = v) }),
+            Triple("vignetteRadius", { it.vignetteRadius }, { r, v -> r.copy(vignetteRadius = v) }),
+            Triple("vignetteShape", { it.vignetteShape }, { r, v -> r.copy(vignetteShape = v) }),
+            Triple("tone", { it.tone }, { r, v -> r.copy(tone = v) }),
+            Triple("toningStrength", { it.toningStrength }, { r, v -> r.copy(toningStrength = v) }),
+        )
+        private val BOOLS: List<Triple<String, (Receipt) -> Boolean, (Receipt, Boolean) -> Receipt>> = listOf(
+            Triple("highlightReconstruction", { it.highlightReconstruction }, { r, v -> r.copy(highlightReconstruction = v) }),
+            Triple("chromaSeparation", { it.chromaSeparation }, { r, v -> r.copy(chromaSeparation = v) }),
+            Triple("creativeAdjustments", { it.creativeAdjustments }, { r, v -> r.copy(creativeAdjustments = v) }),
+            Triple("exrMode", { it.exrMode }, { r, v -> r.copy(exrMode = v) }),
+            Triple("agx", { it.agx }, { r, v -> r.copy(agx = v) }),
+        )
+
+        /** Receipt from [toJson]; missing keys keep MLV-App's defaults. */
+        fun fromJson(json: String): Receipt {
+            val o = org.json.JSONObject(json)
+            var r = Receipt()
+            for ((k, _, set) in INTS) if (o.has(k)) r = set(r, o.getInt(k))
+            for ((k, _, set) in BOOLS) if (o.has(k)) r = set(r, o.getBoolean(k))
+            fun curves(name: String, n: Int): List<Curve>? = o.optJSONArray(name)?.let { a ->
+                List(minOf(n, a.length())) { i ->
+                    val c = a.getJSONObject(i)
+                    val x = c.getJSONArray("x"); val y = c.getJSONArray("y")
+                    Curve(List(x.length()) { x.getDouble(it).toFloat() }, List(y.length()) { y.getDouble(it).toFloat() })
+                }.takeIf { it.size == n }
+            }
+            curves("gradation", 4)?.let { r = r.copy(gradation = it) }
+            curves("hueVs", 4)?.let { r = r.copy(hueVs = it) }
+            return r
+        }
+    }
+
     /** MLV-App setSliders order: (setter name, API value). */
     fun apiValues(asShotKelvin: Double, asShotTint: Double): List<Pair<String, Double>> {
         val satCurve = { v: Int -> ((v + 100) / 200.0 * 2.0).pow(ln(3.6) / ln(2.0)) }
@@ -114,6 +201,7 @@ class MlvGrade(clip: CrawClip) : Closeable {
     private var handle = nativeCreate()
     private var applied: Map<String, Double> = emptyMap()
     private var appliedToning: List<Int>? = null
+    private var appliedCurves: Receipt? = null
 
     /** As-shot white balance in MLV-App kelvin/tint (found with MLV-App itself). */
     var asShot: Pair<Double, Double>? = null
@@ -141,6 +229,13 @@ class MlvGrade(clip: CrawClip) : Closeable {
             if (applied[name] != v || (afterProfile && profileChanged)) nativeSet(handle, name, v)
         }
         applied = values.toMap()
+        for (c in 0..3) {
+            if (appliedCurves?.gradation?.get(c) != r.gradation[c])
+                nativeSetCurve(handle, 0, c, r.gradation[c].xs.toFloatArray(), r.gradation[c].ys.toFloatArray())
+            if (appliedCurves?.hueVs?.get(c) != r.hueVs[c])
+                nativeSetCurve(handle, 1, c, r.hueVs[c].xs.toFloatArray(), r.hueVs[c].ys.toFloatArray())
+        }
+        appliedCurves = r
         val toning = r.toneRgb().toList() + r.toningStrength
         if (toning != appliedToning) {
             nativeSetToning(handle, toning[0], toning[1], toning[2], toning[3])
@@ -164,6 +259,11 @@ class MlvGrade(clip: CrawClip) : Closeable {
         @JvmStatic private external fun nativeSetToning(handle: Long, r: Int, g: Int, b: Int, strength: Int)
         @JvmStatic private external fun nativeSetCurve(handle: Long, kind: Int, channel: Int, xs: FloatArray, ys: FloatArray)
         @JvmStatic private external fun nativeFindWhiteBalance(handle: Long, r: Double, g: Double, b: Double): DoubleArray
+        /** MLV-App's drawn curve at n samples (kind 0 gradation spline, 1 hue-vs cosine). */
+        fun interpolate(kind: Int, c: Curve, n: Int): FloatArray? =
+            nativeInterpolate(kind, c.xs.toFloatArray(), c.ys.toFloatArray(), n)
+
+        @JvmStatic private external fun nativeInterpolate(kind: Int, xs: FloatArray, ys: FloatArray, n: Int): FloatArray?
         @JvmStatic private external fun nativeRender(handle: Long, rgbF16: HardwareBuffer, out: Bitmap): Int
     }
 }

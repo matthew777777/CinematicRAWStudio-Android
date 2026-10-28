@@ -22,7 +22,9 @@
 
 extern "C" {
 #include "raw_processing.h"
+#include "interpolation/cosine_interpolation.h"
 }
+#include "interpolation/spline_helper.h"
 
 namespace {
 
@@ -164,6 +166,24 @@ Java_com_matthew_crs_MlvGrade_nativeSetCurve(JNIEnv* env, jclass, jlong h, jint 
     std::lock_guard<std::mutex> l(g->mutex);
     if (kind == 0) processingSetGCurve(g->p, n, x.data(), y.data(), static_cast<uint8_t>(channel));
     else processingSetHueVsCurves(g->p, n, x.data(), y.data(), static_cast<uint8_t>(channel));
+}
+
+// The line MLV-App draws for a curve (Curves.cpp: spline1dc; HueVsDiagram.cpp:
+// cosine_interpolate), sampled at n x positions i/n, so the editor shows
+// exactly the curve MLV-App applies. kind 0 gradation, 1 hue-vs.
+JNIEXPORT jfloatArray JNICALL
+Java_com_matthew_crs_MlvGrade_nativeInterpolate(JNIEnv* env, jclass, jint kind, jfloatArray xs, jfloatArray ys, jint n) {
+    int numIn = env->GetArrayLength(xs), numOut = n;
+    std::vector<float> x(numIn), y(numIn), xo(n), yo(n);
+    env->GetFloatArrayRegion(xs, 0, numIn, x.data());
+    env->GetFloatArrayRegion(ys, 0, numIn, y.data());
+    for (int i = 0; i < n; ++i) xo[i] = i / static_cast<float>(n);
+    const int ret = kind == 0 ? spline1dc(x.data(), y.data(), &numIn, xo.data(), yo.data(), &numOut)
+                              : cosine_interpolate(x.data(), y.data(), &numIn, xo.data(), yo.data(), &numOut);
+    if (ret != 0) return nullptr;
+    jfloatArray arr = env->NewFloatArray(n);
+    env->SetFloatArrayRegion(arr, 0, n, yo.data());
+    return arr;
 }
 
 // Kelvin/tint at which MLV-App renders camera RGB `neutral` as grey: MLV-App

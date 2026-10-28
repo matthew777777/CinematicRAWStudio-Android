@@ -40,6 +40,9 @@ fun EditorPanel(r: Receipt, asShotKelvin: Double?, onChange: (Receipt) -> Unit, 
         Knob("Shadows", r.shadows, -100..100) { onChange(r.copy(shadows = it)) }
         Knob("Highlights", r.highlights, -100..100) { onChange(r.copy(highlights = it)) }
 
+        Section("Curves")
+        CurveEditor(r, onChange)
+
         Section("Contrast curve")
         Knob("Dark strength", r.ds, 0..100) { onChange(r.copy(ds = it)) }
         Knob("Dark range", r.dr, 0..100) { onChange(r.copy(dr = it)) }
