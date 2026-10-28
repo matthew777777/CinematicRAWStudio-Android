@@ -29,6 +29,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.drop
 
 /** SMPTE-style HH:MM:SS:FF for frame [index]. */
 fun timecode(index: Int, fps: Double): String {
@@ -118,10 +120,18 @@ fun PlayerScreen(uri: Uri, onBack: () -> Unit) {
         val player = e ?: return@LaunchedEffect
         val receipt = player.receipt
         delay(150)
-        withContext(Dispatchers.IO) {
-            ReceiptStore.save(context, uri.toString(), receipt)
-            if (!player.playing && player.frame != null) player.show(player.index)
-        }
+        withContext(Dispatchers.IO) { ReceiptStore.save(context, uri.toString(), receipt) }
+    }
+    // Re-render a paused frame while a control moves: back to back, always with
+    // the newest receipt (values that went stale during a render are skipped).
+    LaunchedEffect(e) {
+        val player = e ?: return@LaunchedEffect
+        androidx.compose.runtime.snapshotFlow { player.receipt to player.playing }
+            .drop(1)
+            .conflate()
+            .collect { (_, playing) ->
+                if (!playing && player.frame != null) withContext(Dispatchers.IO) { player.show(player.index) }
+            }
     }
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, e) {

@@ -4,7 +4,7 @@ package com.matthew.crs
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.KeyboardActions
@@ -201,7 +201,7 @@ private fun Section(title: String) {
         modifier = Modifier.padding(top = 14.dp, bottom = 2.dp))
 }
 
-/** Relative drags at quarter speed avoid jumps; numeric entry and reset share receipt units. */
+/** Relative 1:1 drags avoid jumps; numeric entry and reset share receipt units. */
 @Composable
 private fun Knob(name: String, value: Int, range: IntRange, defaultValue: Int = 0,
     label: String = value.toString(), onReset: (() -> Unit)? = null, onValue: (Int) -> Unit) {
@@ -233,13 +233,15 @@ private fun Knob(name: String, value: Int, range: IntRange, defaultValue: Int = 
             .pointerInput(range, defaultValue) { detectTapGestures(onDoubleTap = {
                 latestReset?.invoke() ?: latestChange(defaultValue.coerceIn(range))
             }) }
+            // Horizontal drags only, so vertical swipes scroll the panel. The thumb
+            // follows the finger 1:1, relative to where the drag started (no jump).
             .pointerInput(range) {
                 var start = 0
                 var pixels = 0f
-                detectDragGestures(onDragStart = { start = latestValue; pixels = 0f }) { change, delta ->
-                    change.consume(); pixels += delta.x
+                detectHorizontalDragGestures(onDragStart = { start = latestValue; pixels = 0f }) { change, dx ->
+                    change.consume(); pixels += dx
                     val usable = (size.width - 16.dp.toPx()).coerceAtLeast(1f)
-                    val next = (start + pixels / usable * (range.last - range.first) * 0.25f).roundToInt().coerceIn(range)
+                    val next = (start + pixels / usable * (range.last - range.first)).roundToInt().coerceIn(range)
                     if (next != latestValue) latestChange(next)
                 }
             }) {
