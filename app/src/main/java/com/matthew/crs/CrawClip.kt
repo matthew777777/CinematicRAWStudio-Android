@@ -13,9 +13,15 @@ data class ClipInfo(
     val camera: String, val iso: Int, val exposureSeconds: Double,
     val audioRate: Int, val audioChannels: Int, val audioBits: Int, val wavSize: Long,
     val recovered: Boolean,
+    /** Frame codec: 1 CRAW-Fast, 2 CRAW-Live (0 unknown). */
+    val codec: Int = 0, val bitDepth: Int = 0,
+    val make: String = "", val model: String = "",
+    /** AsShotNeutral of frame 0 (camera RGB of white), empty if unknown. */
+    val neutral: List<Double> = emptyList(),
 ) {
     val durationSeconds: Double get() = if (fps > 0) frames / fps else 0.0
     val hasAudio: Boolean get() = audioRate > 0 && audioChannels > 0 && audioBits > 0
+    val codecName: String get() = when (codec) { 1 -> "Fast"; 2 -> "Live"; else -> "" }
 }
 
 /** Per-frame levels, white balance and lens shading (see nativeDecodeToBlob). */
@@ -111,6 +117,8 @@ class CrawClip private constructor(private var handle: Long) : Closeable {
                 getString("camera"), getDouble("iso").toInt(), getDouble("exposure"),
                 getInt("audioRate"), getInt("audioChannels"), getInt("audioBits"), getLong("wavSize"),
                 getBoolean("recovered"),
+                optInt("codec"), optInt("bitDepth"), optString("make"), optString("model"),
+                optJSONArray("neutral")?.let { a -> List(a.length()) { a.getDouble(it) } } ?: emptyList(),
             )
         }
 

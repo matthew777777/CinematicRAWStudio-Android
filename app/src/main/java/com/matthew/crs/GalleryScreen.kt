@@ -16,6 +16,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -77,7 +78,8 @@ internal fun listTakes(context: Context, tree: Uri): List<Take> {
 }
 
 /** Disk cache of 480 px thumbnails + metadata, keyed by Uri, size and mtime. */
-private fun diskKey(take: Take) = Integer.toHexString("${take.uri}|${take.bytes}|${take.modified}".hashCode())
+// v2: codec, bit depth, make/model and AsShotNeutral in the metadata.
+private fun diskKey(take: Take) = Integer.toHexString("v2|${take.uri}|${take.bytes}|${take.modified}".hashCode())
 
 private fun readDisk(context: Context, take: Take): TakeCard? = runCatching {
     val dir = java.io.File(context.cacheDir, "thumbs")
@@ -85,7 +87,8 @@ private fun readDisk(context: Context, take: Take): TakeCard? = runCatching {
     val o = org.json.JSONObject(json)
     val info = ClipInfo(o.getInt("width"), o.getInt("height"), o.getInt("frames"), o.getDouble("fps"), o.getBoolean("rgb"),
         o.getString("camera"), o.getInt("iso"), o.getDouble("exposure"), o.getInt("audioRate"), o.getInt("audioChannels"),
-        o.getInt("audioBits"), o.getLong("wavSize"), o.getBoolean("recovered"))
+        o.getInt("audioBits"), o.getLong("wavSize"), o.getBoolean("recovered"), o.optInt("codec"), o.optInt("bitDepth"),
+        o.optString("make"), o.optString("model"), o.optJSONArray("neutral")?.let { a -> List(a.length()) { a.getDouble(it) } } ?: emptyList())
     val jpg = java.io.File(dir, diskKey(take) + ".jpg")
     TakeCard(if (jpg.exists()) android.graphics.BitmapFactory.decodeFile(jpg.path) else null, info)
 }.getOrNull()
@@ -99,6 +102,8 @@ private fun writeDisk(context: Context, take: Take, card: TakeCard) {
             put("width", i.width); put("height", i.height); put("frames", i.frames); put("fps", i.fps); put("rgb", i.rgb)
             put("camera", i.camera); put("iso", i.iso); put("exposure", i.exposureSeconds); put("audioRate", i.audioRate)
             put("audioChannels", i.audioChannels); put("audioBits", i.audioBits); put("wavSize", i.wavSize); put("recovered", i.recovered)
+            put("codec", i.codec); put("bitDepth", i.bitDepth); put("make", i.make); put("model", i.model)
+            put("neutral", org.json.JSONArray(i.neutral))
         }.toString())
     }
 }
@@ -130,7 +135,7 @@ fun formatDuration(seconds: Double): String {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GalleryScreen(onOpen: (Uri) -> Unit, onProjects: () -> Unit = {}) {
+fun GalleryScreen(onOpen: (Uri) -> Unit, onOpenProject: (String) -> Unit = {}) {
     val context = LocalContext.current
     val landscape = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val window = (context as? android.app.Activity)?.window
@@ -148,13 +153,23 @@ fun GalleryScreen(onOpen: (Uri) -> Unit, onProjects: () -> Unit = {}) {
     var dngPicker by remember { mutableStateOf(false) }
     var dngUris by remember { mutableStateOf<List<Uri>?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
-    var newest by rememberSaveable { mutableStateOf(true) }
+    var sort by rememberSaveable { mutableStateOf(TakeSort.Newest) }
+    var filter by rememberSaveable { mutableStateOf(TakeFilter.All) }
+    var sortSheet by remember { mutableStateOf(false) }
+    // Long-press menu and what it opens.
+    var menuFor by remember { mutableStateOf<Take?>(null) }
+    var infoFor by remember { mutableStateOf<Take?>(null) }
+    var exportFor by remember { mutableStateOf<Take?>(null) }
+    var projectFor by remember { mutableStateOf<Take?>(null) }
+    var deleteFor by remember { mutableStateOf<Take?>(null) }
+    var added by remember { mutableStateOf<String?>(null) }
+    var deleteError by remember { mutableStateOf<String?>(null) }
     var refresh by remember { mutableIntStateOf(0) }
     var error by remember { mutableStateOf<String?>(null) }
     val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
             runCatching {
-                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
                 prefs.edit().putString(KEY_TREE, uri.toString()).apply()
                 takes = Thumbs.listings[uri.toString()]
                 tree = uri
@@ -175,9 +190,40 @@ fun GalleryScreen(onOpen: (Uri) -> Unit, onProjects: () -> Unit = {}) {
         result.onSuccess { takes = it; Thumbs.listings[t.toString()] = it }
             .onFailure { error = "This folder is unavailable. Choose the folder again to restore access." }
     }
-    val filtered = remember(takes, query, newest) {
+    // Duration sort and the RAW/RGB/audio filters need each take's metadata:
+    // loaded in the background (disk-cached after the first time) only then.
+    val needInfo = sort == TakeSort.Longest || filter != TakeFilter.All
+    val infos by produceState(emptyMap<String, ClipInfo?>(), takes, needInfo) {
+        if (!needInfo) return@produceState
+        val list = takes.orEmpty()
+        val out = HashMap<String, ClipInfo?>()
+        list.forEach { t -> out[t.uri.toString()] = Thumbs.cache.get(t.uri.toString())?.info }
+        value = out.toMap()
+        withContext(Dispatchers.IO) {
+            list.filter { out[it.uri.toString()] == null }.forEach { t ->
+                out[t.uri.toString()] = loadCard(context, t).info
+                value = out.toMap()
+            }
+        }
+    }
+    val filtered = remember(takes, query, sort, filter, infos) {
         takes.orEmpty().filter { it.name.contains(query, ignoreCase = true) }
-            .let { if (newest) it.sortedByDescending { t -> t.modified } else it.sortedBy { t -> t.name.lowercase() } }
+            .filter { t ->
+                val i = infos[t.uri.toString()]
+                when (filter) {
+                    TakeFilter.All -> true
+                    TakeFilter.Bayer -> i == null || !i.rgb
+                    TakeFilter.Rgb -> i == null || i.rgb
+                    TakeFilter.Audio -> i == null || i.hasAudio
+                }
+            }
+            .let { list -> when (sort) {
+                TakeSort.Newest -> list.sortedByDescending { it.modified }
+                TakeSort.Oldest -> list.sortedBy { it.modified }
+                TakeSort.Name -> list.sortedBy { it.name.lowercase() }
+                TakeSort.Largest -> list.sortedByDescending { it.bytes }
+                TakeSort.Longest -> list.sortedByDescending { infos[it.uri.toString()]?.durationSeconds ?: -1.0 }
+            } }
     }
     @Composable fun Search(modifier: Modifier) {
         Row(modifier.height(if (landscape) 34.dp else 40.dp)
@@ -201,9 +247,9 @@ fun GalleryScreen(onOpen: (Uri) -> Unit, onProjects: () -> Unit = {}) {
         }
     }
     @Composable fun Sort() {
-        if (tree != null) TextButton(onClick = { newest = !newest }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
-            Icon(Icons.AutoMirrored.Filled.Sort, null, Modifier.size(16.dp))
-            Spacer(Modifier.width(4.dp)); Text(if (newest) "Newest" else "Name", fontSize = 12.sp)
+        if (tree != null) TextButton(onClick = { sortSheet = true }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+            Icon(if (filter == TakeFilter.All) Icons.AutoMirrored.Filled.Sort else Icons.Default.FilterList, null, Modifier.size(16.dp))
+            Spacer(Modifier.width(4.dp)); Text(if (filter == TakeFilter.All) sort.title.substringBefore(' ') else filter.title, fontSize = 12.sp)
         }
     }
     val subtitle = if (tree == null) "Your footage. Ready to develop." else
@@ -227,7 +273,6 @@ fun GalleryScreen(onOpen: (Uri) -> Unit, onProjects: () -> Unit = {}) {
                     DropdownMenu(libraryMenu, { libraryMenu = false }) {
                         DropdownMenuItem(text = { Text("Choose takes folder") }, leadingIcon = { Icon(Icons.Default.FolderOpen, null) },
                             onClick = { libraryMenu = false; pickFolder.launch(null) })
-                        DropdownMenuItem(text = { Text("Export jobs") }, leadingIcon = { Icon(Icons.Default.FileUpload, null) }, onClick = { libraryMenu = false; exportJobs = true })
                         DropdownMenuItem(text = { Text("Refresh library") }, enabled = tree != null,
                             leadingIcon = { Icon(Icons.Default.Refresh, null) }, onClick = { libraryMenu = false; refresh++ })
                     }
@@ -280,7 +325,9 @@ fun GalleryScreen(onOpen: (Uri) -> Unit, onProjects: () -> Unit = {}) {
                     else -> LazyVerticalGrid(columns = GridCells.Adaptive(if (landscape) 240.dp else 170.dp),
                         contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(filtered, key = { it.uri.toString() }) { take -> TakeTile(take) { onOpen(take.uri) } }
+                        items(filtered, key = { it.uri.toString() }) { take ->
+                            TakeTile(take, onLongClick = { menuFor = take }) { onOpen(take.uri) }
+                        }
                     }
                 }
             }
@@ -288,6 +335,43 @@ fun GalleryScreen(onOpen: (Uri) -> Unit, onProjects: () -> Unit = {}) {
     }
     }
     if (exportJobs) com.matthew.crs.project.ExportPanel(onDismiss = { exportJobs = false })
+    if (sortSheet) SortFilterSheet(sort, filter, onSort = { sort = it }, onFilter = { filter = it }, onDismiss = { sortSheet = false })
+    menuFor?.let { take ->
+        TakeActionsSheet(take, onDismiss = { menuFor = null },
+            onEdit = { menuFor = null; onOpen(take.uri) },
+            onInfo = { menuFor = null; infoFor = take },
+            onExport = { menuFor = null; exportFor = take },
+            onExportDng = { menuFor = null; dngUris = listOf(take.uri) },
+            onAddToProject = { menuFor = null; projectFor = take },
+            onDelete = { menuFor = null; deleteFor = take })
+    }
+    infoFor?.let { take -> TakeInfoSheet(take, Thumbs.cache.get(take.uri.toString())?.info, onDismiss = { infoFor = null }) }
+    exportFor?.let { take ->
+        com.matthew.crs.project.ExportPanel(prepare = {
+            singleTakeProject(context, take.uri, ReceiptStore.load(context, take.uri.toString()) ?: Receipt())
+        }, onDismiss = { exportFor = null })
+    }
+    projectFor?.let { take ->
+        AddToProjectDialog(take, onDismiss = { projectFor = null }, onAdded = { id -> projectFor = null; added = id })
+    }
+    added?.let { id ->
+        AlertDialog(onDismissRequest = { added = null }, title = { Text("Added to project") },
+            confirmButton = { TextButton(onClick = { added = null; onOpenProject(id) }) { Text("Open project") } },
+            dismissButton = { TextButton(onClick = { added = null }) { Text("Stay here") } })
+    }
+    deleteFor?.let { take ->
+        AlertDialog(onDismissRequest = { deleteFor = null }, title = { Text("Delete take?") },
+            text = { Text("“${take.name}” (%.1f GB) will be deleted from the folder. This cannot be undone.".format(take.bytes / 1e9)) },
+            confirmButton = { TextButton(onClick = {
+                deleteFor = null
+                runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, take.uri) }
+                    .onSuccess { Thumbs.cache.remove(take.uri.toString()); takes = takes?.filterNot { it.uri == take.uri }; refresh++ }
+                    .onFailure { deleteError = "Cannot delete this take. If the folder was chosen in an older version, choose it again (Library options) to allow changes." }
+            }) { Text("Delete", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { deleteFor = null }) { Text("Cancel") } })
+    }
+    deleteError?.let { msg -> AlertDialog(onDismissRequest = { deleteError = null }, text = { Text(msg) },
+        confirmButton = { TextButton(onClick = { deleteError = null }) { Text("OK") } }) }
     val browseDng = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) {
             uris.forEach { uri -> runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } }
@@ -300,31 +384,50 @@ fun GalleryScreen(onOpen: (Uri) -> Unit, onProjects: () -> Unit = {}) {
 
 }
 
+/** Thumbnail with codec/RGB/audio and duration badges; tap opens, long press shows the take's actions. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun TakeTile(take: Take, onClick: () -> Unit) {
+private fun TakeTile(take: Take, onLongClick: () -> Unit, onClick: () -> Unit) {
     val context = LocalContext.current
     val card by produceState<TakeCard?>(initialValue = Thumbs.cache.get(take.uri.toString()), take.uri) {
         if (value == null) value = withContext(Dispatchers.IO) { loadCard(context, take) }
     }
-    Column(Modifier.clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surface).clickable(onClick = onClick)) {
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    Column(Modifier.clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.surface)
+        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.medium)
+        .combinedClickable(onClick = onClick, onLongClickLabel = "Take actions", onLongClick = {
+            haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); onLongClick()
+        })) {
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black), contentAlignment = Alignment.Center) {
             val thumb = card?.thumb
             if (thumb != null) Image(thumb.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             else Icon(Icons.Default.Movie, null, tint = Color.DarkGray)
             card?.info?.let { i ->
-                Text(formatDuration(i.durationSeconds), fontSize = 11.sp, color = Color.White,
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp)
-                        .background(Color(0xAA000000), RoundedCornerShape(4.dp)).padding(horizontal = 5.dp, vertical = 1.dp))
+                Row(Modifier.align(Alignment.TopStart).padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Badge(if (i.rgb) "RGB" else "RAW", accent = !i.rgb)
+                    if (i.codecName.isNotEmpty()) Badge(i.codecName.uppercase())
+                    if (i.hasAudio) Badge("♪")
+                }
+                Badge(formatDuration(i.durationSeconds), Modifier.align(Alignment.BottomEnd).padding(6.dp))
+                if (i.recovered) Badge("RECOVERED", Modifier.align(Alignment.BottomStart).padding(6.dp))
             }
         }
-        Column(Modifier.padding(8.dp)) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
             Text(take.name.removeSuffix(".craw"), maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp)
             val i = card?.info
             Text(
                 if (i == null) "%.1f GB".format(take.bytes / 1e9)
-                else "${i.width}×${i.height}${if (i.rgb) " RGB" else ""} · %.0f fps · %.1f GB".format(i.fps, take.bytes / 1e9),
+                else "${i.width}×${i.height} · %s fps · %.1f GB".format("%.3f".format(i.fps).trimEnd('0').trimEnd('.'), take.bytes / 1e9),
                 fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
             )
         }
     }
+}
+
+@Composable
+private fun Badge(text: String, modifier: Modifier = Modifier, accent: Boolean = false) {
+    Text(text, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.4.sp,
+        color = if (accent) MaterialTheme.colorScheme.onPrimary else Color.White,
+        modifier = modifier.background(if (accent) MaterialTheme.colorScheme.primary else Color(0xB3000000), RoundedCornerShape(4.dp))
+            .padding(horizontal = 5.dp, vertical = 1.dp))
 }
