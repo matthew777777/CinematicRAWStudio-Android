@@ -63,11 +63,40 @@ object ExportQueue {
     fun cancel(context: Context, id: String) {
         val job = jobs.firstOrNull { it.id == id } ?: return
         if (job.status == "Exporting") activeTask?.cancel()
-        else update(context, id) { it.copy(status = "Cancelled", message = "Cancelled before export") }
+        else {
+            deletePartialOutput(context, job)
+            update(context, id) { it.copy(status = "Cancelled", message = "Cancelled before export") }
+        }
     }
-    fun retry(context: Context, id: String) {
-        update(context, id) { it.copy(status = "Queued", progress = 0f, message = "") }
+    /** Requeues [id]; [destination] replaces an output file that was removed. */
+    fun retry(context: Context, id: String, destination: String? = null) {
+        update(context, id) { it.copy(status = "Queued", progress = 0f, message = "", destination = destination ?: it.destination) }
         context.startForegroundService(Intent(context, ExportService::class.java))
+    }
+    fun remove(context: Context, id: String) {
+        jobs.removeAll { it.id == id && it.status != "Exporting" && it.status != "Queued" }
+        persist(context)
+    }
+    fun clearFinished(context: Context) {
+        jobs.removeAll { it.status != "Exporting" && it.status != "Queued" }
+        persist(context)
+    }
+    /** Whether a retry can write to the job's original MP4 (false once its partial file was removed). */
+    fun outputExists(context: Context, job: ExportJob): Boolean =
+        job.settings.output == ExportOutput.ORIGINAL_CINEMA_DNG ||
+            runCatching { androidx.documentfile.provider.DocumentFile.fromSingleUri(context, android.net.Uri.parse(job.destination))?.exists() == true }.getOrDefault(false)
+    /**
+     * A cancelled or failed MP4 export leaves the (empty or unplayable) file the
+     * user created for it; remove it. CinemaDNG writes into a folder the user
+     * chose, so nothing is deleted there.
+     */
+    fun deletePartialOutput(context: Context, job: ExportJob) {
+        if (job.settings.output == ExportOutput.ORIGINAL_CINEMA_DNG) return
+        val uri = android.net.Uri.parse(job.destination)
+        runCatching {
+            if (uri.scheme == "file") java.io.File(requireNotNull(uri.path)).delete()
+            else android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri)
+        }
     }
 }
 
@@ -84,7 +113,10 @@ class ExportService : Service() {
             setReferenceCounted(false); acquire(6 * 60 * 60 * 1000L)
         }
         ExportQueue.load(this)
-        startForeground(410, notification("Preparing export", 0))
+        // Android 15 has a service type for media transcoding; dataSync is capped at 6 h/day there.
+        if (android.os.Build.VERSION.SDK_INT >= 35)
+            startForeground(410, notification("Preparing export", 0), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING)
+        else startForeground(410, notification("Preparing export", 0))
     }
     private fun notification(text: String, progress: Int): Notification = Notification.Builder(this, "exports")
         .setSmallIcon(android.R.drawable.stat_sys_upload).setContentTitle("Cinematic RAW Studio")
@@ -93,6 +125,7 @@ class ExportService : Service() {
         .build()
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (worker?.isActive != true) worker = scope.launch {
+            val ran = mutableListOf<String>()
             while (true) {
                 val job = ExportQueue.jobs.firstOrNull { it.status == "Queued" } ?: break
                 ExportQueue.update(this@ExportService, job.id) { it.copy(status = "Exporting", message = "Preparing sources") }
@@ -113,11 +146,30 @@ class ExportService : Service() {
                 try { task.await(); ExportQueue.update(this@ExportService, job.id) { it.copy(status = "Completed", progress = 1f, message = if (job.settings.output == ExportOutput.ORIGINAL_CINEMA_DNG) "Original CinemaDNG sequence saved" else "Saved MP4") } }
                 catch (cancelled: CancellationException) {
                     if (!scope.isActive) throw cancelled
+                    ExportQueue.deletePartialOutput(this@ExportService, job)
                     ExportQueue.update(this@ExportService, job.id) { it.copy(status = "Cancelled", message = "Export cancelled") }
-                } catch (failure: Exception) { ExportQueue.update(this@ExportService, job.id) { it.copy(status = "Failed", message = failure.message ?: "Export failed") } }
-                finally { ExportQueue.activeTask = null }
+                } catch (failure: Exception) {
+                    ExportQueue.deletePartialOutput(this@ExportService, job)
+                    ExportQueue.update(this@ExportService, job.id) { it.copy(status = "Failed", message = failure.message ?: "Export failed") }
+                }
+                finally { ExportQueue.activeTask = null; ran += job.id }
             }
-            stopForeground(STOP_FOREGROUND_REMOVE); stopSelf()
+            // A dismissable summary replaces the ongoing progress notification.
+            val finished = ExportQueue.jobs.filter { it.id in ran && (it.status == "Completed" || it.status == "Failed") }
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            finished.lastOrNull()?.let { last ->
+                val failed = finished.count { it.status == "Failed" }
+                getSystemService(NotificationManager::class.java).notify(411, Notification.Builder(this@ExportService, "exports")
+                    .setSmallIcon(if (failed > 0) android.R.drawable.stat_notify_error else android.R.drawable.stat_sys_upload_done)
+                    .setContentTitle(if (last.status == "Completed") "Export finished" else "Export failed")
+                    .setContentText(if (last.status == "Completed") last.project.name else "${last.project.name}: ${last.message}")
+                    .setAutoCancel(true)
+                    .setContentIntent(PendingIntent.getActivity(this@ExportService, 1,
+                        Intent(this@ExportService, com.matthew.crs.MainActivity::class.java).putExtra(com.matthew.crs.MainActivity.EXTRA_TAB, "exports"),
+                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
+                    .build())
+            }
+            stopSelf()
         }
         return START_NOT_STICKY
     }

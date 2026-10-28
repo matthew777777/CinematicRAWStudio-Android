@@ -19,7 +19,7 @@ import kotlinx.coroutines.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProjectsScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
+fun ProjectsScreen(onOpen: (String) -> Unit, onBack: (() -> Unit)? = null) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var projects by remember { mutableStateOf<List<SequenceProject>?>(null) }
@@ -29,7 +29,7 @@ fun ProjectsScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) { projects = withContext(Dispatchers.IO) { ProjectStore.list(context) } }
     Scaffold(topBar = { TopAppBar(title = { Text("Projects") }, navigationIcon = {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to library") }
+        if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to library") }
     }, actions = { FilledTonalButton(onClick = { create = true }, modifier = Modifier.padding(end = 16.dp)) {
         Icon(Icons.Default.Add, null, Modifier.size(18.dp)); Text("New project")
     } }) }) { pad ->
