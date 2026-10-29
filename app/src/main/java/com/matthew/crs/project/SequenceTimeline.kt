@@ -279,6 +279,8 @@ private fun ClipActionBar(session: ProjectSession, clip: SequenceClip, onGrade: 
     }
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+        // Grade first: it is the most used action and must not be scrolled off-screen.
+        if (p.track(clip.trackId).kind == TrackKind.VIDEO && !p.asset(clip.assetId).rgb) Act(Icons.Default.Tune, "Grade", true, onGrade)
         Act(Icons.Default.ContentCut, "Split", enabled && inside) { act { it.split(clip.id, playhead) } }
         // Trim the start or end of the clip to the playhead (linked audio follows).
         Act(Icons.Default.FirstPage, "Trim start", enabled && inside) { act { it.trim(clip.id, clip.inUs + (playhead - clip.startUs), clip.inUs + clip.durationUs) } }
@@ -298,7 +300,6 @@ private fun ClipActionBar(session: ProjectSession, clip: SequenceClip, onGrade: 
             }
         }
         Act(Icons.Default.DeleteOutline, "Delete", enabled) { act { it.remove(clip.id) }; session.selectedId = null }
-        if (p.track(clip.trackId).kind == TrackKind.VIDEO && !p.asset(clip.assetId).rgb) Act(Icons.Default.Tune, "Grade", true, onGrade)
     }
     error?.let { msg -> AlertDialog(onDismissRequest = { error = null }, text = { Text(msg) },
         confirmButton = { TextButton(onClick = { error = null }) { Text("OK") } }) }
