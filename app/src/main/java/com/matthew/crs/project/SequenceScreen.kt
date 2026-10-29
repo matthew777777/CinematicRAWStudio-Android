@@ -136,6 +136,12 @@ private fun SequenceEditor(s: ProjectSession, onBack: () -> Unit) {
             val availableHeight = maxHeight
             val availableWidth = maxWidth
             var timelineDp by remember(landscape) { mutableFloatStateOf(if (landscape) 160f else 220f) }
+            // Portrait clip inspector: height (dp, drag the handle) and full-height mode.
+            var inspectorDp by rememberSaveable { mutableFloatStateOf(availableHeight.value * 0.45f) }
+            var inspectorExpanded by rememberSaveable { mutableStateOf(false) }
+            // What the inspector may take while the timeline shows: the preview keeps
+            // 160 dp, plus transport and tool rows (~80 dp), timeline and both handles.
+            val maxInspector = (availableHeight - minOf(timelineDp.dp, availableHeight * 0.4f) - 160.dp - 80.dp - 26.dp).coerceAtLeast(140.dp)
             val density = LocalDensity.current
             // Landscape tracks may take 65 % of the height; portrait keeps 40 % so
             // the preview (and the inspector, when open) stay usable.
@@ -147,7 +153,7 @@ private fun SequenceEditor(s: ProjectSession, onBack: () -> Unit) {
                     }
                 }, contentAlignment = Alignment.Center) { Box(Modifier.width(40.dp).height(3.dp).background(MaterialTheme.colorScheme.onSurfaceVariant)) }
                 SequenceTimeline(s, Modifier.fillMaxWidth().height(minOf(timelineDp.dp, maxTimeline)), compact = landscape,
-                    onGrade = { inspect = true; s.inspectorGrade = true })
+                    onGrade = { inspect = true; s.inspectorGrade = true; if (!landscape) inspectorExpanded = true })
             }
             @Composable fun Monitor(modifier: Modifier) {
                 Column(modifier) {
@@ -204,11 +210,26 @@ private fun SequenceEditor(s: ProjectSession, onBack: () -> Unit) {
             } else Column(Modifier.fillMaxSize()) {
                 // Portrait: preview takes what is left; timeline and inspector have
                 // bounded heights so neither squeezes the other or the picture away.
-                Monitor(Modifier.fillMaxWidth().weight(1f).heightIn(min = 160.dp))
-                Timeline()
+                // The inspector is resizable (drag its handle) and can take everything
+                // below the transport (expand: the timeline hides while grading).
+                if (showInspector && inspectorExpanded) {
+                    Monitor(Modifier.fillMaxWidth().height(maxOf(160.dp, availableHeight * 0.36f)))
+                } else {
+                    Monitor(Modifier.fillMaxWidth().weight(1f).heightIn(min = 160.dp))
+                    Timeline()
+                }
                 if (showInspector) {
-                    HorizontalDivider()
-                    ClipInspector(s, { relink = it; relinkPicker.launch(arrayOf("*/*")) }, Modifier.fillMaxWidth().height(availableHeight * 0.3f))
+                    if (!inspectorExpanded) Box(Modifier.fillMaxWidth().height(14.dp).background(MaterialTheme.colorScheme.outlineVariant)
+                        .pointerInput(availableHeight) {
+                            detectVerticalDragGestures { change, delta ->
+                                change.consume()
+                                inspectorDp = (inspectorDp - delta / density.density).coerceIn(140f, maxInspector.value)
+                            }
+                        }, contentAlignment = Alignment.Center) { Box(Modifier.width(40.dp).height(3.dp).background(MaterialTheme.colorScheme.onSurfaceVariant)) }
+                    ClipInspector(s, { relink = it; relinkPicker.launch(arrayOf("*/*")) },
+                        if (inspectorExpanded) Modifier.fillMaxWidth().weight(1f)
+                        else Modifier.fillMaxWidth().height(minOf(inspectorDp.dp, maxInspector)),
+                        expanded = inspectorExpanded, onExpand = { inspectorExpanded = it })
                 }
             }
         }
@@ -223,7 +244,8 @@ private fun SequenceEditor(s: ProjectSession, onBack: () -> Unit) {
 }
 
 @Composable
-private fun ClipInspector(s: ProjectSession, relink: (SourceAsset) -> Unit, modifier: Modifier) {
+private fun ClipInspector(s: ProjectSession, relink: (SourceAsset) -> Unit, modifier: Modifier,
+    expanded: Boolean = false, onExpand: ((Boolean) -> Unit)? = null) {
     val c = s.selected ?: return
     val p = s.project; val asset = p.asset(c.assetId); val audio = p.track(c.trackId).kind == TrackKind.AUDIO
     var grade by s::inspectorGrade
@@ -233,11 +255,17 @@ private fun ClipInspector(s: ProjectSession, relink: (SourceAsset) -> Unit, modi
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = { grade = false }, modifier = Modifier.weight(1f)) { Text(if (audio) "Audio clip" else "Clip", color = if (!grade) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
             if (!audio) TextButton(onClick = { grade = true }, enabled = !asset.rgb, modifier = Modifier.weight(1f)) { Text("Grade", color = if (grade) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
+            if (grade && !audio && !asset.rgb) IconButton(onClick = { resetGrade = true }, enabled = !ExportQueue.running) {
+                Icon(Icons.Default.RestartAlt, "Reset all of this clip's grade")
+            }
+            if (onExpand != null) IconButton(onClick = { onExpand(!expanded) }) {
+                Icon(if (expanded) Icons.Default.CloseFullscreen else Icons.Default.OpenInFull,
+                    if (expanded) "Show the timeline again" else "Enlarge the inspector")
+            }
         }
         if (grade && !audio && !asset.rgb) {
             val tool = EditTool.valueOf(toolName)
-            TextButton(onClick = { resetGrade = true }, enabled = !ExportQueue.running, modifier = Modifier.align(Alignment.End)) { Text("Reset all", fontSize = 11.sp) }
-            ToolStrip(tool, { toolName = it.name }, compact = true)
+            ToolStrip(tool, { toolName = it.name }, compact = false)
             EditorPanel(c.receipt, s.player.asShotKelvin, { receipt -> s.edit { project -> project.copy(clips = project.clips.map { if (it.id == c.id) it.copy(receipt = receipt) else it }) } },
                 modifier = Modifier.weight(1f).fillMaxWidth(), tool = tool)
         } else Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
