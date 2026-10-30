@@ -65,6 +65,17 @@ the original by parity tests (see [Testing](#testing) and
 
 ## Status
 
+Codec compatibility is 1 Fast, 2 Live v1, 3 Live v2 and 4 Compact. These
+names do not imply a universal compression/speed ranking; Fast predates Live.
+The editor, RawLens and the desktop tools are first-party consumers, not
+evidence of independent third-party adoption. The
+[shared benchmark guide](https://github.com/matthew777777/CinematicRAWStudio-Spec/blob/main/BENCHMARKS.md)
+and [2026-10-30 comparison](https://github.com/matthew777777/CinematicRAWStudio-Spec/tree/main/results/comparison-20261030)
+compare identical RAW samples with JPEG XL and report memory, decode/encode
+cost and sustained isolated phone loops. Those loops exclude Vulkan,
+grading, sound, MediaCodec and recorder overhead; they do not establish
+editor playback or export fps.
+
 | phase | scope | status |
 |---|---|---|
 | 1 | Library, player with audio as master clock, frame step, scrubbing | done |
