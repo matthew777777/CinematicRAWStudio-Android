@@ -12,7 +12,7 @@ grading. Licence: **GPL-3.0-or-later**.
 
 **Library**
 - Grid of takes from a folder (RawLens saves to `DCIM/RawLens`) with
-  thumbnails and RAW/RGB, codec (Fast, Live, Live v2, Compact), audio and
+  thumbnails and RAW/RGB, codec (Balanced, Live v1 — Legacy, Live, Compact — Offline), audio and
   duration badges.
 - Sort (date, name, size, duration) and filter (Bayer RAW, binned RGB, with
   audio); search.
@@ -65,7 +65,7 @@ the original by parity tests (see [Testing](#testing) and
 
 ## Status
 
-Codec compatibility is 1 Fast, 2 Live v1, 3 Live v2 and 4 Compact. These
+Codec IDs 1–4 display as Balanced, Live v1 — Legacy, Live and Compact — Offline. These
 names do not imply a universal compression/speed ranking; Fast predates Live.
 The editor, RawLens and the desktop tools are first-party consumers, not
 evidence of independent third-party adoption. The
@@ -207,3 +207,20 @@ The app shows all licence texts under **Library ⋮ → About & licences**.
 
 GPL-3.0-or-later; see [LICENSE](LICENSE). Vendored components keep their own
 licences (above).
+
+
+## Codec display names
+
+| ID | Display name | Historical names / aliases |
+|---:|---|---|
+| 1 | **CRAW Balanced** | CRAW-Fast, Fast |
+| 2 | **CRAW Live v1 — Legacy** | CRAW-Live, CRAW-Live v1, Live v1 |
+| 3 | **CRAW Live** | CRAW-Live v2, Live v2 |
+| 4 | **CRAW Compact — Offline** | CRAW-Compact, Desktop Compact |
+
+These are display names. Codec IDs, encoded bytes, saved numeric preferences
+and legacy metadata strings retain their existing meanings. Existing recordings
+are not rewritten. Historical benchmark reports keep their original labels;
+use the IDs to match them to this table. Balanced describes the intended
+size/CPU tradeoff, not a guarantee of the smallest files. Live is the current
+recording choice; Live v1 is retained for compatibility and Compact is offline.

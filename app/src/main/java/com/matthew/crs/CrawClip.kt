@@ -13,7 +13,7 @@ data class ClipInfo(
     val camera: String, val iso: Int, val exposureSeconds: Double,
     val audioRate: Int, val audioChannels: Int, val audioBits: Int, val wavSize: Long,
     val recovered: Boolean,
-    /** Frame codec: 1 Fast, 2 Live, 3 Live v2, 4 Compact (0 unknown). */
+    /** Stable frame codec IDs; display names do not change historical metadata. */
     val codec: Int = 0, val bitDepth: Int = 0,
     val make: String = "", val model: String = "",
     /** AsShotNeutral of frame 0 (camera RGB of white), empty if unknown. */
@@ -21,7 +21,7 @@ data class ClipInfo(
 ) {
     val durationSeconds: Double get() = if (fps > 0) frames / fps else 0.0
     val hasAudio: Boolean get() = audioRate > 0 && audioChannels > 0 && audioBits > 0
-    val codecName: String get() = when (codec) { 1 -> "Fast"; 2 -> "Live"; 3 -> "Live v2"; 4 -> "Compact"; else -> "" }
+    val codecName: String get() = when (codec) { 1 -> "Balanced"; 2 -> "Live v1 — Legacy"; 3 -> "Live"; 4 -> "Compact — Offline"; else -> "" }
 }
 
 /** Per-frame levels, white balance and lens shading (see nativeDecodeToBlob). */
