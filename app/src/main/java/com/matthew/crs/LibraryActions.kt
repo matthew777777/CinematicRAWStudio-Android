@@ -80,7 +80,7 @@ fun TakeInfoSheet(take: Take, info: ClipInfo?, onDismiss: () -> Unit) {
             Group("PICTURE")
             Row2("Resolution", "${info.width} × ${info.height}${if (info.rgb) " (binned RGB)" else ""}")
             if (info.bitDepth > 0) Row2("Bit depth", "${info.bitDepth}-bit${if (info.rgb) "" else " Bayer"}")
-            if (info.codecName.isNotEmpty()) Row2("Codec", "CRAW-${info.codecName}")
+            if (info.codecName.isNotEmpty()) Row2("Codec", "CRAW ${info.codecName}")
             Row2("Frame rate", "%.3f".format(info.fps).trimEnd('0').trimEnd('.') + " fps")
             Row2("Duration", "${formatDuration(info.durationSeconds)} · ${info.frames} frames")
             Group("CAPTURE")
