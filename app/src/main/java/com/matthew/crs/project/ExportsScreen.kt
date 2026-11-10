@@ -60,14 +60,18 @@ fun ExportsScreen() {
                     },
                     onOpen = {
                         val dng = job.settings.output == ExportOutput.ORIGINAL_CINEMA_DNG
-                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(job.destination),
+                        val compact = job.settings.output == ExportOutput.CRAW_COMPACT
+                        val outputUri=Uri.parse(job.compact?.uri ?: job.destination)
+                        if(compact) runCatching {context.startActivity(Intent(context,com.matthew.crs.MainActivity::class.java).setData(outputUri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))}
+                            .onFailure {message="Cannot open Compact take"}
+                        else runCatching { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(job.destination),
                             if (dng) android.provider.DocumentsContract.Document.MIME_TYPE_DIR else "video/mp4")
                             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }
                             .onFailure { message = if (dng) "No file manager can open the folder" else "No video player is available" }
                     },
                     onShare = {
-                        runCatching { context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("video/mp4")
-                            .putExtra(Intent.EXTRA_STREAM, Uri.parse(job.destination)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Share export")) }
+                        runCatching { context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(if(job.settings.output==ExportOutput.CRAW_COMPACT) "application/octet-stream" else "video/mp4")
+                            .putExtra(Intent.EXTRA_STREAM, Uri.parse(job.compact?.uri ?: job.destination)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Share export")) }
                     },
                     onRemove = { ExportQueue.remove(context, job.id) })
             }
@@ -87,7 +91,8 @@ private fun Label(text: String) {
 private fun JobCard(job: ExportJob, onCancel: (() -> Unit)? = null, onRetry: (() -> Unit)? = null,
     onOpen: (() -> Unit)? = null, onShare: (() -> Unit)? = null, onRemove: (() -> Unit)? = null) {
     val dng = job.settings.output == ExportOutput.ORIGINAL_CINEMA_DNG
-    val out = if (dng) null else job.settings.output(job.project)
+    val compact = job.settings.output == ExportOutput.CRAW_COMPACT
+    val out = if (dng || compact) null else job.settings.output(job.project)
     Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
         Column(Modifier.fillMaxWidth().padding(14.dp)) {
@@ -96,7 +101,8 @@ private fun JobCard(job: ExportJob, onCancel: (() -> Unit)? = null, onRetry: (()
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(job.project.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(if (dng) "Original CinemaDNG · ${job.project.assets.first().width} × ${job.project.assets.first().height}"
+                    Text(if(compact) "CRAW Compact · lossless · beside original"
+                        else if (dng) "Original CinemaDNG · ${job.project.assets.first().width} × ${job.project.assets.first().height}"
                         else "${job.settings.codec.label} · ${out!!.width} × ${out.height} · ${job.settings.bitrateMbps} Mbps",
                         fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -112,7 +118,7 @@ private fun JobCard(job: ExportJob, onCancel: (() -> Unit)? = null, onRetry: (()
             Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (onCancel != null) Action("Cancel", Icons.Default.Close, onCancel)
                 if (job.status == "Completed") {
-                    if (onOpen != null) Action(if (dng) "Open folder" else "Play", if (dng) Icons.Default.FolderOpen else Icons.Default.PlayArrow, onOpen)
+                    if (onOpen != null) Action(if (dng) "Open folder" else if(compact) "Open take" else "Play", if (dng) Icons.Default.FolderOpen else Icons.Default.PlayArrow, onOpen)
                     if (onShare != null && !dng) Action("Share", Icons.Default.Share, onShare)
                 }
                 if (job.status in listOf("Failed", "Interrupted", "Cancelled") && onRetry != null) Action("Retry", Icons.Default.Refresh, onRetry)

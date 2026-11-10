@@ -1,0 +1,28 @@
+{
+  "commits": {
+    "encoder": "96f41089f7b4e593dde513c593f8c7fc3cb27536",
+    "decoder + tools/common": "a0715ad8b34d53954b427834f466fa77073501e5"
+  },
+  "sha256": {
+    "encoder/LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "encoder/NOTICE": "2429bb18769a7e93e0ba940f4e97239c9ba587b8a164af8d8a260bae208ee46a",
+    "encoder/include/craw/CodecNames.h": "e74b2d63c5ae0f76479f37b93c11313d35d686cb18fcdef4ffce8b3377b8d64d",
+    "encoder/include/craw/Encoder.h": "b17edc1ece26395b10824b380c5dc59b9d919eb9a28ce7495e1e3372142c118f",
+    "encoder/include/craw/Writer.h": "b2405052c688b24245759532defab583bede4dad3619590670f92bd17998ee14",
+    "encoder/src/Crc32c.h": "58e717808d586c93376e3ae542b742841bfa44461f4a5f5534252113dd271fc4",
+    "encoder/src/Encoder.cpp": "a87a15bcb6e6a9fa4321f65288b842ee257c2905f0d72fb84b90f4fb720772a6",
+    "encoder/src/Writer.cpp": "2a3b4ae20eb2689ea731cb50a5cb52219a4920dc35199e15ec2695425862ec27",
+    "decoder/LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "decoder/NOTICE": "a586b676185031b05ce7e9680f9472c7b4b64ee36bf1411ea4625738ea6a43c2",
+    "decoder/include/craw/CodecNames.h": "e74b2d63c5ae0f76479f37b93c11313d35d686cb18fcdef4ffce8b3377b8d64d",
+    "decoder/include/craw/Decoder.h": "f355bdef0953ca09478f4269a18a9640b96bbb5c69ba126e340df902f1a80d96",
+    "decoder/include/craw/Reader.h": "8bcc70c7a346de6eac0ec1acb19fa99854f6aaafd5081f23b02e3bff58c3e71e",
+    "decoder/src/Crc32c.h": "58e717808d586c93376e3ae542b742841bfa44461f4a5f5534252113dd271fc4",
+    "decoder/src/Decoder.cpp": "43393a6d58eb0f255ac70484c8f91ae751fc9e9e2eb72b5b679b4def78a25d9f",
+    "decoder/src/Reader.cpp": "b39a3383f26c7bfa0568bf96917679f71e50e10ce3989380f9478dd50757a4bb",
+    "decoder/tools/common/Clip.cpp": "6e5b0f044aae1ef84d69b602821332ef009380869d1cbb16c913744610375eaa",
+    "decoder/tools/common/Clip.h": "0a4d09bd21bc3ae10f4273e17039f5553057e3d3be67649f6344d8ade8cc8baa",
+    "decoder/tools/common/Json.h": "f6a5eddfac788193e00a28d3a9cac1f3772c665c7e4ba51f254154775f0df806",
+    "decoder/tools/craw_compact.cpp": "b5f5064b2f2e44c47992049c14680d0e858c0e75a68fecb72d40d360db883e55"
+  }
+}

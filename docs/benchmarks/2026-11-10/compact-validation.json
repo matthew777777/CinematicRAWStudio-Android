@@ -1,0 +1,28 @@
+{
+  "date": "2026-11-10",
+  "jvm": {
+    "tests": 19,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "native_compact_cases": 15,
+  "release_apk": "app/build/outputs/apk/release/app-release.apk",
+  "release_apk_bytes": 25423057,
+  "release_apk_sha256": "4a16f0f0d543516af9cb26f0948c23227f40f18f48fca45af9f5e45414aa8854",
+  "native_libraries": [
+    "lib/arm64-v8a/libandroidx.graphics.path.so",
+    "lib/arm64-v8a/libc++_shared.so",
+    "lib/arm64-v8a/libcrs.so",
+    "lib/arm64-v8a/librapidrawhost.so",
+    "lib/armeabi-v7a/libandroidx.graphics.path.so",
+    "lib/armeabi-v7a/libc++_shared.so",
+    "lib/armeabi-v7a/libcrs.so",
+    "lib/armeabi-v7a/librapidrawhost.so"
+  ],
+  "compact_jni_verified_abis": [
+    "arm64-v8a",
+    "armeabi-v7a"
+  ],
+  "device_runtime_tested": false
+}

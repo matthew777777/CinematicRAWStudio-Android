@@ -9,7 +9,8 @@ android {
     ndkVersion = "27.0.12077973"
 
     defaultConfig {
-        applicationId = "com.matthew.crs"
+        // Isolated device validation can coexist with a differently signed installed release.
+        applicationId = providers.gradleProperty("crsApplicationId").orElse("com.matthew.crs").get()
         minSdk = 30
         targetSdk = 35
         versionCode = 1

@@ -1,0 +1,104 @@
+{
+  "adapter": "Apple M1 / Metal",
+  "cases": [
+    {
+      "case": "default",
+      "differing_components": 0,
+      "milliseconds": 5385.9617499999995
+    },
+    {
+      "case": "exposure",
+      "differing_components": 4930,
+      "milliseconds": 18.494457999999998
+    },
+    {
+      "case": "tonal",
+      "differing_components": 5343,
+      "milliseconds": 13.718042
+    },
+    {
+      "case": "detail",
+      "differing_components": 4092,
+      "milliseconds": 16.779
+    },
+    {
+      "case": "noise",
+      "differing_components": 1878,
+      "milliseconds": 31.523417
+    },
+    {
+      "case": "creative",
+      "differing_components": 3909,
+      "milliseconds": 143.587167
+    },
+    {
+      "case": "grain",
+      "differing_components": 3034,
+      "milliseconds": 22.041959
+    },
+    {
+      "case": "monochrome",
+      "differing_components": 5179,
+      "milliseconds": 15.737999999999998
+    },
+    {
+      "case": "agx",
+      "differing_components": 5265,
+      "milliseconds": 38.930958000000004
+    },
+    {
+      "case": "filament",
+      "differing_components": 6111,
+      "milliseconds": 15.996334000000001
+    },
+    {
+      "case": "aces2",
+      "differing_components": 6131,
+      "milliseconds": 31.19875
+    },
+    {
+      "case": "wheels",
+      "differing_components": 174,
+      "milliseconds": 57.737959
+    },
+    {
+      "case": "curves",
+      "differing_components": 953,
+      "milliseconds": 22.140916
+    },
+    {
+      "case": "mixer",
+      "differing_components": 2906,
+      "milliseconds": 15.808042000000002
+    },
+    {
+      "case": "mask-radial",
+      "differing_components": 1819,
+      "milliseconds": 34.00575
+    },
+    {
+      "case": "mask-brush",
+      "differing_components": 1954,
+      "milliseconds": 38.3735
+    },
+    {
+      "case": "lut",
+      "differing_components": 2048,
+      "milliseconds": 21.49625
+    }
+  ],
+  "height": 32,
+  "scope": "Independent graph bring-up on synthetic linear RGBA16F; not reference image parity or throughput acceptance",
+  "width": 64,
+  "checks": {
+    "mhc_four_bayer_phases": {
+      "measured_samples_binary16_exact": true,
+      "flat_fields_binary16_exact": true
+    },
+    "rgba16_gpu_assembly_words_equal_upstream_readback": true,
+    "p010_size_alignment_and_limited_range": true,
+    "reset_restores_default_bytes": true
+  },
+  "timing_note": "Each case includes multiple preview/high-precision/delivery checks; milliseconds are NOT playback or export frame times.",
+  "harness_sha256": "b32b531bdf97d28a529bc4d1308ac6b315e08dfd2b72f54045de61e4164b46a8"
+}

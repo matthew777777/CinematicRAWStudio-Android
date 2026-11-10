@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// JNI bridge for one .CRAW take: metadata, developed preview frames rendered
-// straight into an ARGB_8888 Bitmap, and the take's audio as a WAV stream.
-// Decoding, metadata and audio come from the CRAW decoder's Clip helper;
-// colour (levels, lens shading, white balance, matrices, transfer) from the
-// CRAW TUI developer, so phone and desktop render a take identically.
+// CRAW source decoding, capture calibration, audio and original CinemaDNG.
+// All development and editing is performed by the RapidRAW engine.
 #include <jni.h>
 #include <android/bitmap.h>
 #include <android/hardware_buffer.h>
@@ -13,11 +10,10 @@
 
 #include "common/Clip.h"
 #include "craw/Decoder.h"
-#include "Develop.h"
-#include "raw_tools.h"
 #include "p010_output.h"
 
 #include <algorithm>
+#include <cmath>
 #include <array>
 #include <cerrno>
 #include <cstring>
@@ -37,12 +33,7 @@ struct Handle {
     explicit Handle(const std::string& path) : clip(path) {}
     Handle(int fd, const std::string& name) : clip(fd, name) {}
     craw::tools::Clip clip;
-    std::mutex mutex;  // develop scratch is per handle; one render at a time
-    std::vector<uint16_t> rgb;
-    uint32_t rgbW=0, rgbH=0;
-    RawTools rawTools;          // MLV-App raw-stage tools (state: bad pixel map, stripes)
-    RawToolSettings rawSettings;
-    std::mutex settingsMutex;
+
 };
 
 Handle* from(jlong h) { return reinterpret_cast<Handle*>(h); }
@@ -253,61 +244,6 @@ Java_com_matthew_crs_CrawClip_nativeInfo(JNIEnv* env, jclass, jlong h) {
     return env->NewStringUTF(buf);
 }
 
-// Develops frame `index` at half resolution (Rec.709) into `bitmap`
-// (ARGB_8888, width/height = half the picture size, as reported by
-// nativePreviewSize). Returns 0 on success.
-JNIEXPORT jint JNICALL
-Java_com_matthew_crs_CrawClip_nativeRender(JNIEnv* env, jclass, jlong h, jint index, jobject bitmap,
-                                           jfloat exposureEv) {
-    auto* p = from(h);
-    if (!p || index < 0 || static_cast<size_t>(index) >= p->clip.frameCount()) return -1;
-    AndroidBitmapInfo bi;
-    if (AndroidBitmap_getInfo(env, bitmap, &bi) != ANDROID_BITMAP_RESULT_SUCCESS ||
-        bi.format != ANDROID_BITMAP_FORMAT_RGBA_8888)
-        return -2;
-    std::lock_guard<std::mutex> lock(p->mutex);
-    try {
-        static const unsigned threads = std::max(1u, std::thread::hardware_concurrency());
-        const auto raw = p->clip.frameRaw(static_cast<size_t>(index), threads);
-        craw::tui::DevelopSettings s;
-        s.halfResolution = true;
-        s.exposureEv = exposureEv;
-        uint32_t w = 0, hh = 0;
-        craw::tui::develop(raw, p->clip.info(), s, p->rgb, w, hh, threads);
-        p->rgbW=w; p->rgbH=hh;
-        void* pixels = nullptr;
-        if (AndroidBitmap_lockPixels(env, bitmap, &pixels) != ANDROID_BITMAP_RESULT_SUCCESS) return -3;
-        const uint32_t cw = std::min(w, bi.width), ch = std::min(hh, bi.height);
-        for (uint32_t y = 0; y < ch; ++y) {
-            const uint16_t* s16 = p->rgb.data() + static_cast<size_t>(y) * w * 3;
-            auto* d = reinterpret_cast<uint8_t*>(static_cast<uint8_t*>(pixels) + static_cast<size_t>(y) * bi.stride);
-            for (uint32_t x = 0; x < cw; ++x, s16 += 3, d += 4) {
-                d[0] = static_cast<uint8_t>(s16[0] >> 8);
-                d[1] = static_cast<uint8_t>(s16[1] >> 8);
-                d[2] = static_cast<uint8_t>(s16[2] >> 8);
-                d[3] = 255;
-            }
-        }
-        AndroidBitmap_unlockPixels(env, bitmap);
-        return 0;
-    } catch (const std::exception& e) {
-        __android_log_print(ANDROID_LOG_WARN, "CrawClip", "render %d failed: %s", index, e.what());
-        return -4;
-    }
-}
-
-// Preview size: [width, height] of nativeRender's output.
-JNIEXPORT jintArray JNICALL
-Java_com_matthew_crs_CrawClip_nativePreviewSize(JNIEnv* env, jclass, jlong h) {
-    auto* p = from(h);
-    if (!p) return nullptr;
-    const auto [w, hh] = p->clip.frameSize();  // coded size; develop halves it (RGB frames too)
-    const jint v[2] = {static_cast<jint>(w / 2), static_cast<jint>(hh / 2)};
-    jintArray out = env->NewIntArray(2);
-    env->SetIntArrayRegion(out, 0, 2, v);
-    return out;
-}
-
 // Decodes Bayer frame `index` straight into `blob` (a BLOB AHardwareBuffer
 // of width * height uint16 samples, the RawLens GPU input) and returns the
 // frame parameters the GPU grade needs:
@@ -333,16 +269,7 @@ Java_com_matthew_crs_CrawClip_nativeDecodeToBlob(JNIEnv* env, jclass, jlong h, j
             madvise(reinterpret_cast<void*>(a), reinterpret_cast<uintptr_t>(rec.payload) + rec.payloadSize - a, MADV_WILLNEED);
         }
         auto raw = p->clip.frameRaw(static_cast<size_t>(index), threads);
-        {
-            RawToolSettings rs;
-            { std::lock_guard<std::mutex> l(p->settingsMutex); rs = p->rawSettings; }
-            const int black = static_cast<int>((raw.black[0] + raw.black[1] + raw.black[2] + raw.black[3]) / 4 + 0.5);
-            const int white = static_cast<int>(raw.white);
-            int bits = 1;
-            while ((1 << bits) <= white && bits < 16) ++bits;
-            p->rawTools.apply(rs, raw.pixels.data(), static_cast<int>(raw.width), static_cast<int>(raw.height), raw.cfa,
-                              black, white, bits);
-        }
+        const auto decodedAt = std::chrono::steady_clock::now();
         const auto c1 = std::chrono::steady_clock::now();
         const size_t bytes = raw.pixels.size() * 2;
         AHardwareBuffer_Desc d{};
@@ -360,6 +287,7 @@ Java_com_matthew_crs_CrawClip_nativeDecodeToBlob(JNIEnv* env, jclass, jlong h, j
             std::memcpy(dst, raw.pixels.data(), bytes);
         }
         AHardwareBuffer_unlock(hb, nullptr);
+        const auto copiedAt = std::chrono::steady_clock::now();
         static int logged = 0;
         if (logged++ % 15 == 0)
             __android_log_print(ANDROID_LOG_INFO, "CrawClip", "decode %.1f ms, shade+copy %.1f ms",
@@ -372,6 +300,10 @@ Java_com_matthew_crs_CrawClip_nativeDecodeToBlob(JNIEnv* env, jclass, jlong h, j
         for (double n : raw.neutral) out.push_back(static_cast<float>(n));
         out.push_back(0);  // shading already applied above
         out.push_back(0);
+        // Diagnostic tail, milliseconds; first 13 metadata entries stay unchanged.
+        out.push_back(std::chrono::duration<float, std::milli>(decodedAt - c0).count());
+        out.push_back(std::chrono::duration<float, std::milli>(c1 - decodedAt).count());
+        out.push_back(std::chrono::duration<float, std::milli>(copiedAt - c1).count());
         jfloatArray arr = env->NewFloatArray(static_cast<jsize>(out.size()));
         env->SetFloatArrayRegion(arr, 0, static_cast<jsize>(out.size()), out.data());
         return arr;
@@ -381,35 +313,7 @@ Java_com_matthew_crs_CrawClip_nativeDecodeToBlob(JNIEnv* env, jclass, jlong h, j
     }
 }
 
-// White-balanced camera RGB -> linear Rec.709, row-major (CRAW TUI
-// cameraToTarget: ForwardMatrix1, else ColorMatrix1), for the GPU grade.
-JNIEXPORT jfloatArray JNICALL
-Java_com_matthew_crs_CrawClip_nativeCcm(JNIEnv* env, jclass, jlong h, jfloat nr, jfloat ng, jfloat nb) {
-    auto* p = from(h);
-    if (!p) return nullptr;
-    const auto m = craw::tui::cameraToTarget(p->clip.info(), {nr, ng, nb}, craw::tui::Gamut::Rec709);
-    jfloat v[9];
-    for (int i = 0; i < 9; ++i) v[i] = static_cast<jfloat>(m[i]);
-    jfloatArray arr = env->NewFloatArray(9);
-    env->SetFloatArrayRegion(arr, 0, 9, v);
-    return arr;
-}
-
-// MLV-App raw-stage tool settings: [enabled, verticalStripes, badPixels,
-// bpsMethod, bpiMethod, chromaSmooth, patternNoise].
-JNIEXPORT void JNICALL
-Java_com_matthew_crs_CrawClip_nativeSetRawTools(JNIEnv* env, jclass, jlong h, jintArray values) {
-    auto* p = from(h);
-    if (!p || env->GetArrayLength(values) < 7) return;
-    jint v[7];
-    env->GetIntArrayRegion(values, 0, 7, v);
-    std::lock_guard<std::mutex> l(p->settingsMutex);
-    p->rawSettings = {v[0] != 0, v[1], v[2], v[3], v[4], v[5], v[6]};
-}
-
-// XYZ->camera matrices for MLV-App: [daylight (illuminant 21, D65) x9,
-// tungsten (illuminant 17, Standard A) x9], chosen by illuminant, not by
-// position (Canon DNGs put D65 second, RawLens first). One matrix -> both.
+// XYZ-to-camera calibration matrices, daylight followed by tungsten.
 JNIEXPORT jdoubleArray JNICALL
 Java_com_matthew_crs_CrawClip_nativeCamMatrices(JNIEnv* env, jclass, jlong h) {
     auto* p = from(h);
@@ -468,15 +372,58 @@ Java_com_matthew_crs_CrawClip_nativeWriteDng(JNIEnv*, jclass, jlong h, jint inde
 }
 
 JNIEXPORT jint JNICALL
-Java_com_matthew_crs_CrawClip_nativeWriteP010(JNIEnv* env, jclass, jlong h, jobject image, jint w, jint hh) {
-    auto* p=from(h);if(!p)return -1;
-    std::lock_guard<std::mutex> lock(p->mutex);
-    if(p->rgb.size()!=size_t(p->rgbW)*p->rgbH*3)return -2;
-    return rgb16ToP010(env,image,p->rgb.data(),p->rgbW,p->rgbH,w,hh);
-}
-JNIEXPORT jint JNICALL
 Java_com_matthew_crs_project_P010Output_nativeBlack(JNIEnv* env,jclass,jobject image,jint w,jint h) {
-    return rgb16ToP010(env,image,nullptr,0,0,w,h);
+    return blackP010Image(env,image,w,h);
+}
+
+
+// Recorded RGB cells contain ungraded camera-linear R,G/B,unused samples.
+// Unpack/normalize capture values only; RapidRAW handles WB, matrix and grading.
+JNIEXPORT jfloatArray JNICALL
+Java_com_matthew_crs_CrawClip_nativeDecodeRgb(JNIEnv* env,jclass,jlong handle,jint index,jobject hardware) {
+    auto* p=from(handle);
+    if(!p||!p->clip.isRgb()||index<0||size_t(index)>=p->clip.frameCount())return nullptr;
+    auto* buffer=AHardwareBuffer_fromHardwareBuffer(env,hardware);
+    AHardwareBuffer_Desc desc{};if(buffer)AHardwareBuffer_describe(buffer,&desc);
+    if(!buffer||desc.format!=AHARDWAREBUFFER_FORMAT_R16G16B16A16_FLOAT)return nullptr;
+    try {
+        auto raw=p->clip.frameRaw(size_t(index),std::max(1u,std::thread::hardware_concurrency()));
+        const unsigned sourceW=raw.width/2,sourceH=raw.height/2;
+        if(desc.width==0||desc.height==0||sourceW%desc.width||sourceH%desc.height)return nullptr;
+        void* memory=nullptr;
+        if(AHardwareBuffer_lock(buffer,AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN,-1,nullptr,&memory)!=0)return nullptr;
+        const unsigned nx=sourceW/desc.width,ny=sourceH/desc.height;
+        const int planes[3]={0,1,3};
+        auto gain=[&](unsigned x,unsigned y,int channel) {
+            const int cols=raw.shadingColumns,rows=raw.shadingRows;
+            if(cols<=0||rows<=0||raw.shadingGains.size()!=size_t(cols)*rows*4)return 1.f;
+            const float gx=std::clamp(float((x+.5)/raw.width*cols-.5),0.f,float(cols-1));
+            const float gy=std::clamp(float((y+.5)/raw.height*rows-.5),0.f,float(rows-1));
+            const int x0=int(gx),y0=int(gy),x1=std::min(x0+1,cols-1),y1=std::min(y0+1,rows-1);
+            auto at=[&](int xx,int yy){return raw.shadingGains[(size_t(yy)*cols+xx)*4+planes[channel]];};
+            const float a=at(x0,y0)+(at(x1,y0)-at(x0,y0))*(gx-x0);
+            const float b=at(x0,y1)+(at(x1,y1)-at(x0,y1))*(gx-x0);
+            return a+(b-a)*(gy-y0);
+        };
+        for(unsigned y=0;y<desc.height;++y)for(unsigned x=0;x<desc.width;++x) {
+            auto* out=static_cast<_Float16*>(memory)+(size_t(y)*desc.stride+x)*4;
+            for(unsigned c=0;c<3;++c) {
+                double sum=0;
+                for(unsigned dy=0;dy<ny;++dy)for(unsigned dx=0;dx<nx;++dx) {
+                    const unsigned xx=(x*nx+dx)*2+(c==1),yy=(y*ny+dy)*2+(c==2);
+                    const double black=raw.black[c];
+                    sum+=std::max(0.,(raw.pixels[size_t(yy)*raw.width+xx]-black)/std::max(1.,raw.white-black))*gain(xx,yy,c);
+                }
+                out[c]=static_cast<_Float16>(sum/(nx*ny));
+            }
+            out[3]=static_cast<_Float16>(1.f);
+        }
+        AHardwareBuffer_unlock(buffer,nullptr);
+        const float neutral[3]={float(raw.neutral[0]),float(raw.neutral[1]),float(raw.neutral[2])};
+        auto result=env->NewFloatArray(3);if(result)env->SetFloatArrayRegion(result,0,3,neutral);return result;
+    } catch(const std::exception& e) {
+        __android_log_print(ANDROID_LOG_ERROR,"CrawClip","Recorded RGB decode: %s",e.what());return nullptr;
+    }
 }
 
 }  // extern "C"

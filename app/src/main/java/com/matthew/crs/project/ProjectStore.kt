@@ -3,7 +3,7 @@ package com.matthew.crs.project
 
 import android.content.Context
 import android.util.AtomicFile
-import com.matthew.crs.Receipt
+import com.matthew.crs.rapidraw.RapidGradeSnapshot
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -46,15 +46,18 @@ object ProjectStore {
             put("id", c.id); put("assetId", c.assetId); put("trackId", c.trackId)
             put("startUs", c.startUs); put("inUs", c.inUs); put("durationUs", c.durationUs)
             put("linkId", c.linkId ?: JSONObject.NULL); put("gain", c.gain.toDouble())
-            put("receipt", JSONObject(c.receipt.toJson()))
+            put("grade", JSONObject(c.grade.encoded))
+            c.legacyGrade?.let { put("legacyGrade", JSONObject(it)) }
         } }))
     }.toString(2)
     fun decode(json: String): SequenceProject {
         val o = JSONObject(json)
+        val version = o.getInt("version")
+        require(version in 1..2) { "Unsupported project version $version" }
         fun <T> rows(key: String, read: (JSONObject) -> T): List<T> = o.getJSONArray(key).let { a ->
             (0 until a.length()).map { read(a.getJSONObject(it)) }
         }
-        return SequenceProject(id = o.getString("id"), name = o.getString("name"), version = o.getInt("version"),
+        return SequenceProject(id = o.getString("id"), name = o.getString("name"), version = 2,
             rate = FrameRate(o.getInt("fpsNum"), o.getInt("fpsDen")), width = o.getInt("width"), height = o.getInt("height"),
             assets = rows("assets") { a -> SourceAsset(id = a.getString("id"), uri = a.getString("uri"),
                 name = a.getString("name"), kind = AssetKind.valueOf(a.getString("kind")),
@@ -67,7 +70,8 @@ object ProjectStore {
             clips = rows("clips") { c -> SequenceClip(id = c.getString("id"), assetId = c.getString("assetId"),
                 trackId = c.getString("trackId"), startUs = c.getLong("startUs"), inUs = c.getLong("inUs"),
                 durationUs = c.getLong("durationUs"), linkId = if (c.isNull("linkId")) null else c.getString("linkId"),
-                gain = c.getDouble("gain").toFloat(), receipt = Receipt.fromJson(c.getJSONObject("receipt").toString())) }
+                gain = c.getDouble("gain").toFloat(), grade = if (version == 2) RapidGradeSnapshot(c.getJSONObject("grade").toString()) else RapidGradeSnapshot(),
+                legacyGrade = if (version == 1) c.optJSONObject("receipt")?.toString() else c.optJSONObject("legacyGrade")?.toString()) }
         ).validated()
     }
 }

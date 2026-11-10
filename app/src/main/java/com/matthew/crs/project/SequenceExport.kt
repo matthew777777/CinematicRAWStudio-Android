@@ -17,7 +17,7 @@ enum class ExportVideoCodec(val label: String, val mime: String, val tenBit: Boo
     AVC("H.264 / AVC", "video/avc"), HEVC("HEVC · 8-bit", "video/hevc"),
     HEVC10("HEVC Main10 · 10-bit", "video/hevc", true)
 }
-enum class ExportOutput { MP4, ORIGINAL_CINEMA_DNG }
+enum class ExportOutput { MP4, ORIGINAL_CINEMA_DNG, CRAW_COMPACT }
 
 /** Largest hardware-encodable size not above a requested one, keeping its aspect. */
 object EncoderLimits {
@@ -95,6 +95,7 @@ object SequenceExporter {
             OriginalDngExporter.export(context, snapshot, destination, progress)
             return@withContext
         }
+        require(settings.output == ExportOutput.MP4) { "Use the whole-take Compact conversion action" }
         val project = settings.output(snapshot)
         val encoder = settings.encoder(snapshot) ?: error("This device cannot encode these settings. Choose another codec, resolution, or bitrate.")
         val folder = File(context.cacheDir, "sequence-export-${UUID.randomUUID()}").apply { mkdirs() }
@@ -146,22 +147,22 @@ object SequenceExporter {
                             var slot = -1
                             while (slot < 0) {
                                 currentCoroutineContext().ensureActive()
-                                slot = codec.dequeueInputBuffer(10000)
+                                slot = com.matthew.crs.PipelineTiming.measure("codec.input_wait") { codec.dequeueInputBuffer(10000) }
                                 check(android.os.SystemClock.elapsedRealtime() - lastProgress < 30000) { "Main10 input stopped responding" }
                             }
                             // Query capacity before getInputImage, which owns this input slot on C2.
                             val capacity = codec.getInputBuffer(slot)?.capacity() ?: error("Main10 encoder has no input buffer")
                             val image = codec.getInputImage(slot) ?: error("Main10 encoder did not expose writable P010 images")
                             try {
-                                renderer.renderP010(project, frame, image)
-                                codec.queueInputBuffer(slot, 0, capacity, project.rate.time(frame), 0)
+                                com.matthew.crs.PipelineTiming.measure("export.render_p010") { renderer.renderP010(project, frame, image) }
+                                com.matthew.crs.PipelineTiming.measure("codec.p010_submit") { codec.queueInputBuffer(slot, 0, capacity, project.rate.time(frame), 0) }
                             } finally { runCatching { image.close() } }
                             lastProgress = android.os.SystemClock.elapsedRealtime()
                             progress((frame + 1).toFloat() / project.frameCount)
                         }
                         var slot = -1
                         while (slot < 0) {
-                            currentCoroutineContext().ensureActive(); slot = codec.dequeueInputBuffer(10000)
+                            currentCoroutineContext().ensureActive(); slot = com.matthew.crs.PipelineTiming.measure("codec.input_wait") { codec.dequeueInputBuffer(10000) }
                             check(android.os.SystemClock.elapsedRealtime() - lastProgress < 30000) { "Main10 encoder did not accept end of stream" }
                         }
                         codec.queueInputBuffer(slot, 0, 0, project.rate.time(project.frameCount), MediaCodec.BUFFER_FLAG_END_OF_STREAM)
@@ -195,8 +196,8 @@ object SequenceExporter {
                     ProjectFrameRenderer(context).use { renderer ->
                         for (frame in 0 until project.frameCount) {
                             currentCoroutineContext().ensureActive()
-                            val bitmap = renderer.render(project, frame)
-                            encoderSurface.draw(bitmap, project.rate.time(frame) * 1000)
+                            val bitmap = com.matthew.crs.PipelineTiming.measure("export.render") { renderer.render(project, frame) }
+                            com.matthew.crs.PipelineTiming.measure("codec.upload_draw_submit") { encoderSurface.draw(bitmap, project.rate.time(frame) * 1000) }
                             progress((frame + 1).toFloat() / project.frameCount)
                         }
                     }
@@ -231,7 +232,7 @@ object SequenceExporter {
                 var sample = 0L; var lastProgress = android.os.SystemClock.elapsedRealtime()
                 while (sample < total) {
                     currentCoroutineContext().ensureActive()
-                    val slot = codec.dequeueInputBuffer(10000)
+                    val slot = com.matthew.crs.PipelineTiming.measure("codec.input_wait") { codec.dequeueInputBuffer(10000) }
                     if (slot >= 0) {
                         val buffer = codec.getInputBuffer(slot)!!.order(ByteOrder.LITTLE_ENDIAN); buffer.clear()
                         val frames = minOf(2048L, total - sample, buffer.remaining().toLong() / 4).toInt()
@@ -247,7 +248,7 @@ object SequenceExporter {
                 var queuedEos = false
                 while (!queuedEos) {
                     currentCoroutineContext().ensureActive()
-                    val slot = codec.dequeueInputBuffer(10000)
+                    val slot = com.matthew.crs.PipelineTiming.measure("codec.input_wait") { codec.dequeueInputBuffer(10000) }
                     if (slot >= 0) { codec.queueInputBuffer(slot, 0, 0, sample * 1_000_000L / 48000, MediaCodec.BUFFER_FLAG_END_OF_STREAM); queuedEos = true }
                     mux.drain(false)
                     check(android.os.SystemClock.elapsedRealtime() - lastProgress < 30000) { "Audio encoder did not accept end of stream" }
@@ -293,7 +294,7 @@ internal class CodecSink(private val codec: MediaCodec, file: File, private val 
         var lastProgress = android.os.SystemClock.elapsedRealtime()
         while (!ended) {
             currentCoroutineContext().ensureActive()
-            val slot = codec.dequeueOutputBuffer(info, if (eos) 10000 else 0)
+            val slot = com.matthew.crs.PipelineTiming.measure("codec.output_wait") { codec.dequeueOutputBuffer(info, if (eos) 10000 else 0) }
             when {
                 slot == MediaCodec.INFO_TRY_AGAIN_LATER -> {
                     if (!eos) return
@@ -318,7 +319,7 @@ internal class CodecSink(private val codec: MediaCodec, file: File, private val 
                             check(started) { "Encoder output format is missing" }
                             val buffer = codec.getOutputBuffer(slot)!!
                             buffer.position(info.offset); buffer.limit(info.offset + info.size)
-                            muxer.writeSampleData(track, buffer, info)
+                            com.matthew.crs.PipelineTiming.measure("codec.mux_write") { muxer.writeSampleData(track, buffer, info) }
                         }
                         ended = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
                         lastProgress = android.os.SystemClock.elapsedRealtime()

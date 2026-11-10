@@ -5,3 +5,7 @@ app/.cxx/
 local.properties
 .idea/
 *.iml
+app/src/main/rust/rapidraw-core/target/
+.DS_Store
+__pycache__/
+*.pyc

@@ -1,0 +1,32 @@
+{
+  "artifact": "app/build/outputs/apk/release/app-release.apk",
+  "bytes": 25357521,
+  "sha256": "51018c883ed65c0bb9203a21fbc06521bbabd406bb7a440cf1b937186d67f177",
+  "old_processing_assets": [],
+  "native_libraries": [
+    "lib/arm64-v8a/libandroidx.graphics.path.so",
+    "lib/arm64-v8a/libc++_shared.so",
+    "lib/arm64-v8a/libcrs.so",
+    "lib/arm64-v8a/librapidrawhost.so",
+    "lib/armeabi-v7a/libandroidx.graphics.path.so",
+    "lib/armeabi-v7a/libc++_shared.so",
+    "lib/armeabi-v7a/libcrs.so",
+    "lib/armeabi-v7a/librapidrawhost.so"
+  ],
+  "jvm_suites": [
+    {
+      "name": "com.matthew.crs.rapidraw.RapidMigrationTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0"
+    },
+    {
+      "name": "com.matthew.crs.project.SequenceTest",
+      "tests": "11",
+      "failures": "0",
+      "errors": "0"
+    }
+  ],
+  "device_runtime_tested_this_delivery": false,
+  "published": false
+}

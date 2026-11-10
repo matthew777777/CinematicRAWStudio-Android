@@ -1,8 +1,10 @@
+> Historical checkpoint; superseded by the AI-free MHC/RapidRAW delivery in [rapidraw-engine.md](rapidraw-engine.md).
+
 # MLV-App parity
 
 Grading and raw-stage tools are MLV-App's own code (`third_party/mlv-app`,
-vendored unchanged from MLV-App c4357a3 by `tools/sync_mlvapp.sh`), with two
-bug-fix patches in `tools/patches/mlv-app/`. Parity is measured on a real
+vendored unchanged from MLV-App c4357a3 by `tools/sync_mlvapp.sh`), with documented
+patches in `tools/patches/mlv-app/`. Parity is measured on a real
 CRAW frame, host build (MLV-App's release flags) against the app's Android
 arm64 build on the phone.
 
@@ -66,6 +68,14 @@ desaturation, sharpening, chroma separation, dual ISO.
   runs the method each label names.
 - Apple-only chroma-smoothing path (GCD) reads scratch memory it never wrote
   (results change with `MallocPreScribble`); the app uses the OpenMP path.
+
+## Display transforms and highlight correction
+
+See [grading audit](grading-audit.md) for complete UI/API coverage and the
+Filament AgX / ACES 2.0 additions. Patch `0004` deliberately changes early
+WB clipping and saturated-sensor neutral clipping (reconstruction off), plus neutral desaturation, and adds the
+scene-linear display-transform hook. The older parity measurements above
+predate this patch; host-vs-Android still compares the same patched code.
 
 ## Deliberate differences
 

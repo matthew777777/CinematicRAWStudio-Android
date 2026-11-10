@@ -1,0 +1,68 @@
+{
+  "adapter": "Apple M1 / Metal",
+  "cases": [
+    {
+      "case": "default",
+      "differing_components": 0,
+      "milliseconds": 7.754334
+    },
+    {
+      "case": "exposure",
+      "differing_components": 4930,
+      "milliseconds": 2.233125
+    },
+    {
+      "case": "tonal",
+      "differing_components": 5343,
+      "milliseconds": 2.1580000000000004
+    },
+    {
+      "case": "detail",
+      "differing_components": 4092,
+      "milliseconds": 3.565833
+    },
+    {
+      "case": "noise",
+      "differing_components": 1878,
+      "milliseconds": 2.465084
+    },
+    {
+      "case": "creative",
+      "differing_components": 3909,
+      "milliseconds": 36.720833
+    },
+    {
+      "case": "grain",
+      "differing_components": 3034,
+      "milliseconds": 3.442166
+    },
+    {
+      "case": "monochrome",
+      "differing_components": 5179,
+      "milliseconds": 2.735708
+    },
+    {
+      "case": "agx",
+      "differing_components": 5265,
+      "milliseconds": 6.403665999999999
+    },
+    {
+      "case": "wheels",
+      "differing_components": 174,
+      "milliseconds": 9.064708
+    },
+    {
+      "case": "curves",
+      "differing_components": 953,
+      "milliseconds": 2.6023330000000002
+    },
+    {
+      "case": "mixer",
+      "differing_components": 2906,
+      "milliseconds": 7.612583
+    }
+  ],
+  "height": 32,
+  "scope": "Independent graph bring-up on synthetic linear RGBA16F; not reference image parity or throughput acceptance",
+  "width": 64
+}

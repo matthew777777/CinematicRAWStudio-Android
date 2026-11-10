@@ -1,0 +1,13 @@
+13 upstream parametric curve fixtures match exact float32 bits on Android
+RapidRAW native exposure: mean pixel difference 32.735188802083336
+RapidRAW native tonal: mean pixel difference 11.30615234375
+RapidRAW native detail: mean pixel difference 0.050944010416666664
+RapidRAW native wheels: mean pixel difference 0.0830078125
+RapidRAW native curves: mean pixel difference 5.413411458333333
+RapidRAW native parametric: mean pixel difference 6.374348958333333
+RapidRAW native filament: mean pixel difference 36.32568359375
+RapidRAW native aces2: mean pixel difference 54.987955729166664
+Unconnected host effect fails explicitly
+PASS: independent RapidRAW JNI + Vulkan chart controls; no source footage or video export tested
+PASS: independent RapidRAW JNI/Vulkan controls
+

@@ -1,0 +1,8 @@
+{
+  "naga": "29.0.4",
+  "sources": {
+    "app/src/main/shaders/display_transform.glsl": "3d3c7d687966051ec3aef48f8db1275fa6065852389f4755fb083d9effc48183",
+    "app/src/main/shaders/aces2_output.glsl": "f1f47ec3939197f5154d43eef9ea606269f8111e0b9b835f94a41fe90ef71198"
+  },
+  "adapter": "GLSL -> SPIR-V -> WGSL; fixture storage/entry wrapper removed; pointer-call wrappers added; math preserved"
+}

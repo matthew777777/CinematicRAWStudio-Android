@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.matthew.crs
 
+import com.matthew.crs.rapidraw.*
+
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -135,7 +137,7 @@ fun formatDuration(seconds: Double): String {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GalleryScreen(onOpen: (Uri) -> Unit, onOpenProject: (String) -> Unit = {}) {
+fun GalleryScreen(onOpen: (Uri) -> Unit, onOpenProject: (String) -> Unit = {}, onNewEditor: () -> Unit = {}) {
     val context = LocalContext.current
     val landscape = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     // System bars are hidden app-wide (MainActivity): full-screen look.
@@ -146,6 +148,8 @@ fun GalleryScreen(onOpen: (Uri) -> Unit, onOpenProject: (String) -> Unit = {}) {
     var exportJobs by remember { mutableStateOf(false) }
     var libraryMenu by remember { mutableStateOf(false) }
     var dngPicker by remember { mutableStateOf(false) }
+    var compactUris by remember { mutableStateOf<List<Uri>?>(null) }
+    var compactPicker by remember { mutableStateOf(false) }
     var dngUris by remember { mutableStateOf<List<Uri>?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
     var sort by rememberSaveable { mutableStateOf(TakeSort.Newest) }
@@ -162,6 +166,9 @@ fun GalleryScreen(onOpen: (Uri) -> Unit, onOpenProject: (String) -> Unit = {}) {
     var about by remember { mutableStateOf(false) }
     var refresh by remember { mutableIntStateOf(0) }
     var error by remember { mutableStateOf<String?>(null) }
+    val browseCompact = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if(uris.isNotEmpty()) compactUris=uris
+    }
     val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
             runCatching {
@@ -179,7 +186,7 @@ fun GalleryScreen(onOpen: (Uri) -> Unit, onOpenProject: (String) -> Unit = {}) {
             onOpen(uri)
         }
     }
-    LaunchedEffect(tree, refresh) {
+    LaunchedEffect(tree, refresh, SourceAliases.revision) {
         val t = tree ?: return@LaunchedEffect
         error = null
         val result = withContext(Dispatchers.IO) { runCatching { listTakes(context, t) } }
@@ -269,6 +276,9 @@ fun GalleryScreen(onOpen: (Uri) -> Unit, onOpenProject: (String) -> Unit = {}) {
                     DropdownMenu(libraryMenu, { libraryMenu = false }) {
                         DropdownMenuItem(text = { Text("Choose takes folder") }, leadingIcon = { Icon(Icons.Default.FolderOpen, null) },
                             onClick = { libraryMenu = false; pickFolder.launch(null) })
+                        DropdownMenuItem(text = { Text("Convert takes to CRAW Compact") }, leadingIcon = { Icon(Icons.Default.Archive, null) },
+                            onClick = { libraryMenu = false; compactPicker = true })
+                        DropdownMenuItem(text = { Text("New editor preview") }, onClick = { libraryMenu = false; onNewEditor() })
                         DropdownMenuItem(text = { Text("About & licences") }, leadingIcon = { Icon(Icons.Default.Info, null) },
                             onClick = { libraryMenu = false; about = true })
                         DropdownMenuItem(text = { Text("Refresh library") }, enabled = tree != null,
@@ -278,8 +288,7 @@ fun GalleryScreen(onOpen: (Uri) -> Unit, onOpenProject: (String) -> Unit = {}) {
             }
         }
     }) { pad ->
-        Column(Modifier.padding(pad).fillMaxSize()
-            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))) {
+        Column(Modifier.padding(pad).fillMaxSize()) {
             Row(Modifier.fillMaxWidth().height(if (landscape) 48.dp else 62.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Library", fontSize = if (landscape) 14.sp else 20.sp, fontWeight = FontWeight.Medium)
@@ -341,19 +350,20 @@ fun GalleryScreen(onOpen: (Uri) -> Unit, onOpenProject: (String) -> Unit = {}) {
             onInfo = { menuFor = null; infoFor = take },
             onExport = { menuFor = null; exportFor = take },
             onExportDng = { menuFor = null; dngUris = listOf(take.uri) },
+            onCompact = { menuFor = null; compactUris = listOf(take.uri) },
             onAddToProject = { menuFor = null; projectFor = take },
             onDelete = { menuFor = null; deleteFor = take },
             // Copied settings onto this take (keeps its RAW corrections); RGB takes are not graded.
             onPaste = SettingsClipboard.copied?.takeIf { Thumbs.cache.get(take.uri.toString())?.info?.rgb != true }?.let { copied -> {
                 menuFor = null
                 val key = take.uri.toString()
-                ReceiptStore.save(context, key, copied.onto(ReceiptStore.load(context, key) ?: Receipt()))
+                RapidGradeStore.save(context, key, copied.grade())
             } })
     }
     infoFor?.let { take -> TakeInfoSheet(take, Thumbs.cache.get(take.uri.toString())?.info, onDismiss = { infoFor = null }) }
     exportFor?.let { take ->
         com.matthew.crs.project.ExportPanel(prepare = {
-            singleTakeProject(context, take.uri, ReceiptStore.load(context, take.uri.toString()) ?: Receipt())
+            singleTakeProject(context, take.uri, RapidGradeSnapshot((RapidGradeStore.load(context, take.uri.toString(), RapidDefaults.schema) ?: RapidDefaults.schema.defaults()).encode()))
         }, onDismiss = { exportFor = null })
     }
     projectFor?.let { take ->
@@ -385,6 +395,8 @@ fun GalleryScreen(onOpen: (Uri) -> Unit, onOpenProject: (String) -> Unit = {}) {
     }
     if (dngPicker) com.matthew.crs.project.LibraryTakesDialog(onDismiss = { dngPicker = false },
         onPick = { dngPicker = false; dngUris = it }, onBrowse = { dngPicker = false; browseDng.launch(arrayOf("*/*")) }, title = "Select takes for CinemaDNG", action = "Select")
+    if(compactPicker) com.matthew.crs.project.LibraryTakesDialog(onDismiss={compactPicker=false},onPick={compactPicker=false;compactUris=it},onBrowse={compactPicker=false;browseCompact.launch(arrayOf("*/*"))},title="Select takes for Compact",action="Select")
+    compactUris?.let {com.matthew.crs.project.CompactPanel(it,onDismiss={compactUris=null;refresh++})}
     dngUris?.let { com.matthew.crs.project.CinemaDngPanel(it, onDismiss = { dngUris = null }) }
 
 }

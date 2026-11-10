@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicLong
 class SequencePlayer(private val context: Context, initial: SequenceProject) : AutoCloseable {
     private val executor = Executors.newSingleThreadExecutor { r -> Thread(r, "SequenceVideo") }
     private val generation = AtomicLong()
-    private val renderer = ProjectFrameRenderer(context)
+    private val renderer = ProjectFrameRenderer(context, proxy = true)
     @Volatile private var current = initial
     @Volatile private var sound: SequenceSound? = null
     @Volatile private var closed = false
@@ -24,10 +24,13 @@ class SequencePlayer(private val context: Context, initial: SequenceProject) : A
     var asShotKelvin by mutableStateOf<Double?>(null); private set
 
     fun update(project: SequenceProject) {
+        val resume = playing
         pause(); current = project; seek(index)
+        if (resume) play()
     }
     fun seek(requested: Long) {
         if (closed) return
+        if (ExportQueue.running) { error = "Preview is paused while exporting"; return }
         pause()
         val project = current
         val target = requested.coerceIn(0, (project.frameCount - 1).coerceAtLeast(0))
@@ -80,6 +83,11 @@ class SequencePlayer(private val context: Context, initial: SequenceProject) : A
         val audio = sound
         if (playing && audio != null) index = current.rate.frame(audio.positionUs).coerceIn(0, (current.frameCount - 1).coerceAtLeast(0))
         playing = false; audio?.stop(); busy = false
+    }
+    fun releaseForExport() {
+        if(closed) return
+        pause()
+        executor.execute { renderer.close() }
     }
     override fun close() {
         if (closed) return

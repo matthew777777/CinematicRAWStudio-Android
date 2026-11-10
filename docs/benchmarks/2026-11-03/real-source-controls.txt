@@ -1,0 +1,9 @@
+Source 4080x2040 -> 2040x1020; upload 320.678231 ms; as-shot 4626.839012521505 K / -15.046640768255893
+RapidRAW source exposure: mean pixel difference 38.38293204536717
+RapidRAW source wheels: mean pixel difference 15.181545879789825
+RapidRAW source curves: mean pixel difference 17.6557223183391
+RapidRAW source aces2: mean pixel difference 37.40665737536845
+Second source frame developed through new engine
+Separate new-engine grade storage round-trip passed; original receipt untouched
+PASS: RCD to independent RapidRAW source preview
+

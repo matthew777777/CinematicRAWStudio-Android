@@ -14,7 +14,7 @@ import java.io.File
 
 /** Persisted snapshots: later edits to a source/project cannot change an already queued job. */
 data class ExportJob(val id: String = newId(), val project: SequenceProject, val settings: ExportSettings,
-    val destination: String, val status: String = "Queued", val progress: Float = 0f, val message: String = "")
+    val destination: String, val status: String = "Queued", val progress: Float = 0f, val message: String = "", val compact: CompactResult? = null, val sourceDecision: String = "Pending", val partialUri: String? = null)
 object ExportQueue {
     val jobs = mutableStateListOf<ExportJob>()
     private var loaded = false
@@ -33,7 +33,8 @@ object ExportQueue {
                     settings = ExportSettings(ExportVideoCodec.valueOf(s.getString("codec")), s.getInt("height"), s.getInt("bitrate"), s.getBoolean("audio"), ExportOutput.valueOf(s.optString("output", "MP4"))),
                     destination = o.getString("destination"), status = if (old == "Exporting") "Interrupted" else old,
                     message = if (old == "Exporting") "Export was interrupted. Retry to render the saved snapshot." else o.optString("message"),
-                    progress = o.optDouble("progress", 0.0).toFloat())
+                    progress = o.optDouble("progress", 0.0).toFloat(), compact = o.optJSONObject("compact")?.let(CompactResult::decode),
+                    sourceDecision = o.optString("sourceDecision", "Pending"), partialUri = if(o.isNull("partialUri")) null else o.getString("partialUri"))
             }
         }
     }
@@ -43,6 +44,7 @@ object ExportQueue {
             put("settings", JSONObject().put("codec", j.settings.codec.name).put("height", j.settings.height)
                 .put("bitrate", j.settings.bitrateMbps).put("audio", j.settings.audio).put("output", j.settings.output.name))
             put("destination", j.destination); put("status", j.status); put("progress", j.progress.toDouble()); put("message", j.message)
+            put("compact", j.compact?.encode() ?: JSONObject.NULL); put("sourceDecision", j.sourceDecision); put("partialUri", j.partialUri ?: JSONObject.NULL)
         } })
         val f = file(context); val stream = f.startWrite()
         try { stream.write(array.toString().toByteArray()); f.finishWrite(stream) }
@@ -50,7 +52,7 @@ object ExportQueue {
     }
     fun enqueue(context: Context, project: SequenceProject, settings: ExportSettings, destination: String) {
         load(context)
-        require(settings.output == ExportOutput.ORIGINAL_CINEMA_DNG || settings.encoder(project) != null) { "Selected export settings are unsupported" }
+        require(settings.output != ExportOutput.MP4 || settings.encoder(project) != null) { "Selected export settings are unsupported" }
         jobs += ExportJob(project = project.validated(), settings = settings, destination = destination)
         persist(context)
         context.startForegroundService(Intent(context, ExportService::class.java))
@@ -74,16 +76,18 @@ object ExportQueue {
         context.startForegroundService(Intent(context, ExportService::class.java))
     }
     fun remove(context: Context, id: String) {
+        jobs.firstOrNull {it.id==id && it.status !in listOf("Exporting","Queued") && it.settings.output==ExportOutput.CRAW_COMPACT && it.compact==null}?.let {deletePartialOutput(context,it)}
         jobs.removeAll { it.id == id && it.status != "Exporting" && it.status != "Queued" }
         persist(context)
     }
     fun clearFinished(context: Context) {
+        jobs.filter {it.settings.output==ExportOutput.CRAW_COMPACT && it.status !in listOf("Exporting","Queued") && it.compact==null}.forEach {deletePartialOutput(context,it)}
         jobs.removeAll { it.status != "Exporting" && it.status != "Queued" }
         persist(context)
     }
     /** Whether a retry can write to the job's original MP4 (false once its partial file was removed). */
     fun outputExists(context: Context, job: ExportJob): Boolean =
-        job.settings.output == ExportOutput.ORIGINAL_CINEMA_DNG ||
+        job.settings.output != ExportOutput.MP4 ||
             runCatching { androidx.documentfile.provider.DocumentFile.fromSingleUri(context, android.net.Uri.parse(job.destination))?.exists() == true }.getOrDefault(false)
     /**
      * A cancelled or failed MP4 export leaves the (empty or unplayable) file the
@@ -92,6 +96,14 @@ object ExportQueue {
      */
     fun deletePartialOutput(context: Context, job: ExportJob) {
         if (job.settings.output == ExportOutput.ORIGINAL_CINEMA_DNG) return
+        if (job.settings.output == ExportOutput.CRAW_COMPACT) {
+            if(job.compact!=null) return
+            job.partialUri?.let { partial ->
+                val uri=android.net.Uri.parse(partial)
+                if(job.project.assets.none {CrawSiblingFiles.sameDocument(uri,android.net.Uri.parse(it.uri))})runCatching {CrawSiblingFiles.delete(context,uri)}
+            }
+            return
+        }
         val uri = android.net.Uri.parse(job.destination)
         runCatching {
             if (uri.scheme == "file") java.io.File(requireNotNull(uri.path)).delete()
@@ -132,21 +144,29 @@ class ExportService : Service() {
                 val started = android.os.SystemClock.elapsedRealtime()
                 val task = scope.async(Dispatchers.IO) {
                     var last = 0L
-                    SequenceExporter.export(this@ExportService, job.project, job.settings, android.net.Uri.parse(job.destination)) { fraction, phase ->
+                    val progress: (Float,String)->Unit = { fraction, phase ->
                         val now = android.os.SystemClock.elapsedRealtime()
                         if (now - last >= 200 || fraction >= 1f) {
                             last = now
                             scope.launch {
-                                ExportQueue.update(this@ExportService, job.id, persist = false) { it.copy(progress = fraction, message = phase) }
+                                ExportQueue.update(this@ExportService, job.id, persist = false) { if(it.status=="Exporting") it.copy(progress = fraction, message = phase) else it }
                                 getSystemService(NotificationManager::class.java).notify(410, notification("${job.project.name} · $phase", (fraction * 100).toInt()))
                             }
                         }
                     }
+                    if(job.settings.output==ExportOutput.CRAW_COMPACT) {
+                        ExportQueue.deletePartialOutput(this@ExportService,job)
+                        CompactConverter.export(this@ExportService,job,progress)
+                    } else {
+                        SequenceExporter.export(this@ExportService,job.project,job.settings,android.net.Uri.parse(job.destination),progress)
+                        null
+                    }
                 }
                 ExportQueue.activeTask = task
-                try { task.await()
+                try { val compactResult = task.await()
                     if (job.settings.output == ExportOutput.MP4) ExportSpeed.record(this@ExportService, job.project, (android.os.SystemClock.elapsedRealtime() - started) / 1000.0)
-                    ExportQueue.update(this@ExportService, job.id) { it.copy(status = "Completed", progress = 1f, message = if (job.settings.output == ExportOutput.ORIGINAL_CINEMA_DNG) "Original CinemaDNG sequence saved" else "Saved MP4") } }
+                    ExportQueue.update(this@ExportService, job.id) { it.copy(status = "Completed", progress = 1f, compact = compactResult, partialUri = null,
+                        message = when(job.settings.output) {ExportOutput.ORIGINAL_CINEMA_DNG -> "Original CinemaDNG sequence saved"; ExportOutput.CRAW_COMPACT -> "Compact file verified; original kept"; else -> "Saved MP4"}) } }
                 catch (cancelled: CancellationException) {
                     if (!scope.isActive) throw cancelled
                     ExportQueue.deletePartialOutput(this@ExportService, job)

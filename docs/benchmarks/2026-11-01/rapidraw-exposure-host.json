@@ -1,0 +1,61 @@
+{
+  "commit": "f1d71a69eef813432db214f77969f567c41ff1d7",
+  "stage": "apply_linear_exposure",
+  "adapter": {
+    "vendor": "",
+    "architecture": "",
+    "device": "Apple M1",
+    "description": "",
+    "stackgroup_min_size": 4,
+    "stackgroup_max_size": 128,
+    "vendor_id": 0,
+    "device_id": 0,
+    "adapter_type": "IntegratedGPU",
+    "backend_type": "Metal"
+  },
+  "wgpu_version": "0.32.0",
+  "spirv_sha256": "3e52775b715be958e18c365b5025ce13b7aa874ed0c6b645fd359ad7118ad365",
+  "scope": "Host GPU execution; not an Android Vulkan parity result",
+  "cases": [
+    {
+      "samples": 1,
+      "unequal_components": 0,
+      "max_absolute": 0.0,
+      "mean_absolute": 0.0,
+      "max_ulp": 0,
+      "quantized_rgb16_max": 0,
+      "quantized_rgb16_unequal": 0,
+      "zero_ev_bit_identity": true
+    },
+    {
+      "samples": 63,
+      "unequal_components": 0,
+      "max_absolute": 0.0,
+      "mean_absolute": 0.0,
+      "max_ulp": 0,
+      "quantized_rgb16_max": 0,
+      "quantized_rgb16_unequal": 0,
+      "zero_ev_bit_identity": true
+    },
+    {
+      "samples": 65,
+      "unequal_components": 0,
+      "max_absolute": 0.0,
+      "mean_absolute": 0.0,
+      "max_ulp": 0,
+      "quantized_rgb16_max": 0,
+      "quantized_rgb16_unequal": 0,
+      "zero_ev_bit_identity": true
+    },
+    {
+      "samples": 4233,
+      "unequal_components": 0,
+      "max_absolute": 0.0,
+      "mean_absolute": 0.0,
+      "max_ulp": 0,
+      "quantized_rgb16_max": 0,
+      "quantized_rgb16_unequal": 0,
+      "zero_ev_bit_identity": true
+    }
+  ]
+}

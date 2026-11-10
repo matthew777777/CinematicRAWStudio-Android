@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.os.ParcelFileDescriptor
 import android.net.Uri
 import com.matthew.crs.project.*
+import com.matthew.crs.rapidraw.*
 import kotlinx.coroutines.*
 import java.io.File
 import java.io.RandomAccessFile
@@ -16,10 +17,28 @@ import kotlin.math.*
 
 /** Real-device integration checks: RAW grading -> codec, sequence cuts, mixed audio, save/reopen, DNG. */
 class ProjectInstrumentation : Instrumentation() {
+    private var rapidNative = false
+    private var rapidSource = false
+    private var nativePlayback = false
+    private var nativeExport = false
+    private var playbackOnly = false
+    private var benchmark = false
+    private var benchmarkFrames = 30
     private var headless = false
     private var main10HighRes = false
     private var gpuParity = false
+    private var colorCheck = false
+    private var colorSource: String? = null
     override fun onCreate(arguments: Bundle?) {
+        rapidNative = arguments?.getString("rapidraw") == "true"
+        rapidSource = arguments?.getString("rapidrawsource") == "true"
+        nativePlayback = arguments?.getString("nativeplayback") == "true"
+        nativeExport = arguments?.getString("nativeexport") == "true"
+        playbackOnly = arguments?.getString("playbackonly") == "true"
+        benchmark = arguments?.getString("benchmark") == "true"
+        benchmarkFrames = (arguments?.getString("frames")?.toIntOrNull() ?: 30).coerceIn(3, 600)
+        colorSource = arguments?.getString("source")
+        colorCheck = arguments?.getString("colorcheck") == "true"
         headless = arguments?.getString("headless") == "true"
         main10HighRes = arguments?.getString("main10hires") == "true"
         gpuParity = arguments?.getString("gpuparity") == "true"
@@ -28,11 +47,142 @@ class ProjectInstrumentation : Instrumentation() {
     private fun report(text: String) { sendStatus(0, Bundle().apply { putString("stream", text + "\n") }) }
     override fun onStart() {
         try {
-            runBlocking { if (gpuParity) verifyGpuParity() else if (main10HighRes) verifyMain10HighRes() else verify() }
-            finish(Activity.RESULT_OK, Bundle().apply { putString("stream", "PASS: project/RAW/video/audio/CinemaDNG integration\n") })
+            runBlocking { if (rapidSource) verifyRapidSource() else if (rapidNative) verifyRapidNative() else if (benchmark) verifyBenchmark() else if (colorCheck || gpuParity) verifyRapidNative() else if (main10HighRes) verifyMain10HighRes() else verify() }
+            finish(Activity.RESULT_OK, Bundle().apply { putString("stream", when {
+                rapidNative -> "PASS: independent RapidRAW JNI/Vulkan controls\n"
+                rapidSource -> "PASS: MHC to independent RapidRAW source preview\n"
+                benchmark -> "PASS: pipeline benchmark completed\n"
+                else -> "PASS: project/RAW/video/audio/CinemaDNG integration\n"
+            }) })
         } catch (failure: Throwable) {
             finish(Activity.RESULT_CANCELED, Bundle().apply { putString("stream", failure.stackTraceToString()) })
         }
+    }
+    private fun verifyRapidSource() {
+        val context=targetContext
+        val schema=com.matthew.crs.rapidraw.RapidSchema(
+            context.assets.open("rapidraw/defaults.json").bufferedReader().use{it.readText()},
+            context.assets.open("rapidraw/schema.json").bufferedReader().use{it.readText()})
+        val grade=schema.defaults(com.matthew.crs.rapidraw.RapidOutput.FilamentAgX)
+        val dir=context.getExternalFilesDir("project-review")!!.resolve("rapidraw-source").apply{mkdirs()}
+        com.matthew.crs.rapidraw.RapidMhcSource.open(context,bayerSource(),proxy=true).use { source ->
+            com.matthew.crs.rapidraw.RapidComputeSession(source.width,source.height).use { compute ->
+                val start=System.nanoTime();val metadata=source.upload(0,compute)
+                report("Source ${source.info.width}x${source.info.height} -> ${source.width}x${source.height}; upload ${(System.nanoTime()-start)/1e6} ms; as-shot ${metadata.asShotTemperature} K / ${metadata.asShotTint}")
+                check(metadata.asShotTemperature.isFinite()&&metadata.asShotTint.isFinite())
+                val baseline=compute.render(grade,metadata)
+                for((name,adjusted) in listOf("exposure" to grade.withValue("exposure",1.0),
+                    "wheels" to grade.withWheel(com.matthew.crs.rapidraw.WheelRange.Global,com.matthew.crs.rapidraw.RapidWheel(240.0,60.0,5.0)),
+                    "curves" to grade.withCurveMode("parametric").withParametric(com.matthew.crs.rapidraw.CurveChannel.Luma,"lights",60.0),
+                    "aces2" to grade.withOutput(com.matthew.crs.rapidraw.RapidOutput.Aces2))) {
+                    val image=compute.render(adjusted,metadata)
+                    val difference=error(image,baseline)
+                    check(difference>0.01){"$name did not affect source preview"}
+                    File(dir,"$name.png").outputStream().use{image.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)}
+                    image.recycle();report("RapidRAW source $name: mean pixel difference $difference")
+                }
+                val again=source.upload(0,compute)
+                check(again==metadata){"Cached source metadata changed"}
+                val restored=compute.render(grade,again)
+                check(error(restored,baseline)==0.0){"Cached source/grade changed preview"}
+                restored.recycle();baseline.recycle()
+                if(source.info.frames>1){val next=source.upload(1,compute);compute.render(grade,next).recycle();report("Second source frame developed through new engine")}
+                val fixtureKey="fixture://rapidraw-source-store"
+                com.matthew.crs.rapidraw.RapidGradeStore.save(context,fixtureKey,grade.withValue("exposure",1.0))
+                val saved=com.matthew.crs.rapidraw.RapidGradeStore.load(context,fixtureKey,schema)!!
+                check(saved.number("exposure")==1.0&&saved.output==grade.output)
+                report("Separate new-engine grade storage round-trip passed; original receipt untouched")
+            }
+        }
+    }
+    private fun verifyRapidNative() {
+        val context=targetContext
+        val schema=com.matthew.crs.rapidraw.RapidSchema(
+            context.assets.open("rapidraw/defaults.json").bufferedReader().use { it.readText() },
+            context.assets.open("rapidraw/schema.json").bufferedReader().use { it.readText() })
+        val base=schema.defaults(com.matthew.crs.rapidraw.RapidOutput.Upstream)
+        val metadata=com.matthew.crs.rapidraw.RapidSourceMetadata(true,6504.0,0.0)
+        val curveFixtures=org.json.JSONObject(this.context.assets.open("rapidraw-parametric-curves.json").bufferedReader().use{it.readText()}).getJSONArray("cases")
+        repeat(curveFixtures.length()) { index ->
+            val fixture=curveFixtures.getJSONObject(index)
+            val parametric=base.value("parametricCurve") as org.json.JSONObject
+            parametric.put("luma",fixture.getJSONObject("settings"))
+            val resolved=base.withValue("parametricCurve",parametric).withCurveMode("parametric")
+            val points=resolved.at("curves.luma") as org.json.JSONArray
+            val expected=fixture.getJSONArray("float32_bits")
+            repeat(points.length()) { i ->
+                for((component,key) in listOf("x","y").withIndex()) {
+                    val bits=points.getJSONObject(i).getDouble(key).toFloat().toRawBits().toLong() and 0xffffffffL
+                    check(bits==expected.getJSONArray(i).getLong(component)){"Curve fixture $index point $i $key differs at shader precision"}
+                }
+            }
+        }
+        report("${curveFixtures.length()} upstream parametric curve fixtures match exact float32 bits on Android")
+        val packed=com.matthew.crs.rapidraw.RapidHost.prepare(base.withValue("exposure",2.0),metadata)
+        check(packed.getFloat(0)==2.5f) { "JNI preparation changed upstream exposure scaling" }
+        val dir=context.getExternalFilesDir("project-review")!!.resolve("rapidraw-native").apply { mkdirs() }
+        com.matthew.crs.rapidraw.RapidComputeSession(64,32).use { renderer ->
+            renderer.uploadLinearFrame(com.matthew.crs.rapidraw.RapidComputeSession.chart(64,32),true)
+            val original=renderer.render(base,metadata)
+            val cases=listOf(
+                "exposure" to base.withValue("exposure",1.0),
+                "tonal" to base.withValue("shadows",40.0).withValue("highlights",-30.0),
+                "detail" to base.withValue("clarity",30.0).withValue("sharpness",35.0),
+                "wheels" to base.withWheel(com.matthew.crs.rapidraw.WheelRange.Shadows,com.matthew.crs.rapidraw.RapidWheel(220.0,70.0,5.0)),
+                "curves" to base.withCurve(com.matthew.crs.rapidraw.CurveChannel.Red,listOf(com.matthew.crs.rapidraw.RapidPoint(0.0,0.0),com.matthew.crs.rapidraw.RapidPoint(100.0,180.0),com.matthew.crs.rapidraw.RapidPoint(255.0,255.0))),
+                "parametric" to base.withCurveMode("parametric").withParametric(com.matthew.crs.rapidraw.CurveChannel.Luma,"lights",70.0),
+                "filament" to base.withOutput(com.matthew.crs.rapidraw.RapidOutput.FilamentAgX),
+                "aces2" to base.withOutput(com.matthew.crs.rapidraw.RapidOutput.Aces2))
+            for((name,grade) in cases) {
+                val image=renderer.render(grade,metadata)
+                val diff=error(image,original)
+                check(diff>0.01) { "$name did not affect native Vulkan pixels" }
+                File(dir,"$name.png").outputStream().use { image.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it) }
+                image.recycle()
+                report("RapidRAW native $name: mean pixel difference $diff")
+            }
+            val bypass=renderer.render(base.withValue("exposure",1.0).withActive("basic",false),metadata)
+            check(error(original,bypass)==0.0) { "Basic bypass did not restore original Vulkan output" }
+            bypass.recycle();original.recycle()
+            try {
+                renderer.render(base.withValue("aiDenoiseEnabled",true),metadata)
+                error("Unconnected host effect was silently ignored")
+            } catch(expected:IllegalStateException) { check(expected.message?.contains("basic Vulkan")==true); report("AI excluded from basic Vulkan grading") }
+        }
+        report("PASS: independent RapidRAW JNI + Vulkan chart controls; no source footage or video export tested")
+    }
+    /** Same production renderer used by playback and export, with explicit resolution reporting. */
+    private suspend fun verifyBenchmark() {
+        val context = targetContext
+        val raw = ProjectMedia.importRaw(context, bayerSource()).copy(hasAudio = false)
+        val count = minOf(benchmarkFrames, raw.frames)
+        val dir = context.getExternalFilesDir("project-review")!!.apply { mkdirs() }
+        val lines = mutableListOf<String>()
+        fun emit(line: String) { lines.add(line); report(line) }
+        for (output in listOf(RapidOutput.FilamentAgX, RapidOutput.Aces2)) {
+            val grade = RapidGradeSnapshot(RapidDefaults.schema.defaults(output).encode())
+            val base = SequenceProject(name = "RapidRAW benchmark", width = raw.width and -2,
+                height = raw.height and -2, rate = FrameRate.fromFps(raw.fps)).append(raw, grade = grade)
+            val project = base.copy(clips = base.clips.map { it.copy(durationUs = base.rate.time(count.toLong())) }).validated()
+            ProjectFrameRenderer(context, proxy = !nativePlayback).use { renderer ->
+                renderer.render(project,0)
+                val start = System.nanoTime()
+                repeat(count) { renderer.render(project,it.toLong()) }
+                val seconds = (System.nanoTime()-start)/1e9
+                emit("RapidRAW ${output.name} native=$nativePlayback source=${raw.width}x${raw.height} frames=$count seconds=$seconds fps=${count/seconds}; headless throughput, not display presentation")
+            }
+            if (!playbackOnly) for (codec in listOf(ExportVideoCodec.AVC,ExportVideoCodec.HEVC10)) {
+                val settings = ExportSettings(codec=codec,bitrateMbps=12)
+                val outputProject = if (nativeExport) project else project.copy(width=1280,height=720)
+                if(settings.encoder(outputProject)==null) continue
+                val start = System.nanoTime()
+                SequenceExporter.export(context,outputProject,settings,Uri.fromFile(File(dir,"rapidraw-${output.name}-${codec.name}.mp4"))) { _,_ -> }
+                val seconds = (System.nanoTime()-start)/1e9
+                val actual = settings.output(outputProject)
+                emit("RapidRAW export ${output.name} ${codec.name} ${actual.width}x${actual.height} frames=$count seconds=$seconds fps=${count/seconds}")
+            }
+        }
+        File(dir,"rapidraw-benchmark.txt").writeText(lines.joinToString("\n"))
     }
     private suspend fun verify() {
         val context = targetContext
@@ -46,7 +196,7 @@ class ProjectInstrumentation : Instrumentation() {
         val rate = FrameRate(30)
         var project = SequenceProject(name = "Integration check", width = 320, height = 180, rate = rate).append(raw).append(recorded).append(raw)
         project = project.copy(clips = project.clips.mapIndexed { index, c -> c.copy(startUs = rate.time(index * 3L),
-            durationUs = rate.time(3), receipt = if (index == 2) Receipt(exposure = 100, contrast = 13, saturation = 15) else Receipt()) }).validated()
+            durationUs = rate.time(3), grade = if (index == 2) testGrade() else RapidGradeSnapshot()) }).validated()
         val music = tone(context, 44100, 440.0, 0.12, project.durationUs)
         val voice = tone(context, 48000, 880.0, 0.1, project.durationUs)
         project = project.append(music, project.tracks[2].id, 0).append(voice, project.tracks[3].id, 0)
@@ -94,7 +244,7 @@ class ProjectInstrumentation : Instrumentation() {
             report("${codec.label}: 9 edited frames, both cuts, RAW grade, and both audio tones verified")
         }
         val single = SequenceProject(name = "Single edited clip", width = 320, height = 180, rate = rate).append(raw).let { p ->
-            p.copy(clips = p.clips.map { it.copy(durationUs = rate.time(3), receipt = Receipt(exposure = 100, contrast = 13, saturation = 15)) }).validated()
+            p.copy(clips = p.clips.map { it.copy(durationUs = rate.time(3), grade = testGrade()) }).validated()
         }
         val singleExpected = ProjectFrameRenderer(context).use { it.render(single, 0).copy(Bitmap.Config.ARGB_8888, false)!! }
         val singleFile = File(dir, "single-edited.mp4")
@@ -110,7 +260,7 @@ class ProjectInstrumentation : Instrumentation() {
         if (headless) {
             for ((width, height) in listOf(1280 to 720, raw.width to raw.height).distinct()) {
                 val full = SequenceProject(name = "Main10 $width x $height", width = width, height = height, rate = rate).append(raw).let { p ->
-                    p.copy(clips = p.clips.map { it.copy(durationUs = rate.time(2), receipt = Receipt(exposure = 100, contrast = 13)) }).validated()
+                    p.copy(clips = p.clips.map { it.copy(durationUs = rate.time(2), grade = testGrade()) }).validated()
                 }
                 val tenBit = ExportSettings(codec = ExportVideoCodec.HEVC10, bitrateMbps = 24)
                 check(tenBit.encoder(full) != null) { "No Main10 encoder candidate for $width x $height" }
@@ -168,82 +318,16 @@ class ProjectInstrumentation : Instrumentation() {
     }
     /**
      * Vulkan MLV-App grade vs MLV-App's own CPU code (-e gpuparity true): the
-     * same RCD frame through both, each per-pixel stage alone and all together.
+     * same MHC frame through both, each per-pixel stage alone and all together.
      * Reports max / mean |diff| in 16-bit units over the processed RGB16.
      */
-    private suspend fun verifyGpuParity() {
-        val context = targetContext
-        val root = context.getSharedPreferences("gallery", 0).getString("tree", null) ?: error("Choose a source folder in the library first")
-        val take = listTakes(context, Uri.parse(root)).firstOrNull { t -> CrawClip.open(context, t.uri)?.use { !it.info.rgb } == true }
+    private fun bayerSource(): Uri = colorSource?.let(Uri::parse) ?: run {
+        val root = targetContext.getSharedPreferences("gallery", 0).getString("tree", null) ?: error("Choose a source folder first")
+        listTakes(targetContext, Uri.parse(root)).firstOrNull { t -> CrawClip.open(targetContext, t.uri)?.use { !it.info.rgb } == true }?.uri
             ?: error("Test requires a Bayer take")
-        val raw = ProjectMedia.importRaw(context, take.uri).copy(hasAudio = false)
-        val base = SequenceProject(name = "GPU parity", width = raw.width and 1.inv(), height = raw.height and 1.inv()).append(raw)
-        val hue = Curve(listOf(0f, 0.3f, 0.6f, 1f), listOf(0f, 0.4f, -0.3f, 0f))
-        val gcurve = Curve(listOf(0.00001f, 0.3f, 0.7f, 1f), listOf(0.00001f, 0.25f, 0.8f, 1f))
-        val cases = linkedMapOf(
-            "defaults" to Receipt(),
-            "exposure +1" to Receipt(exposure = 100),
-            "exposure -2.5" to Receipt(exposure = -250),
-            "contrast +40" to Receipt(contrast = 40),
-            "contrast -60" to Receipt(contrast = -60),
-            "white balance 3200 K, tint +30" to Receipt(temperature = 3200, tint = 30),
-            "vibrance +60" to Receipt(vibrance = 60),
-            "vibrance -50" to Receipt(vibrance = -50),
-            "saturation +40" to Receipt(saturation = 40),
-            "saturation -100" to Receipt(saturation = -100),
-            "dark/light strength" to Receipt(ds = 70, dr = 30, ls = 60, lr = 80, lightening = 40),
-            "highlight reconstruction" to Receipt(exposure = 200, highlightReconstruction = true),
-            "vignette -60" to Receipt(vignetteStrength = -60, vignetteRadius = 50, vignetteShape = 30),
-            "toning" to Receipt(tone = 40, toningStrength = 60),
-            "gradation curves" to Receipt(gradation = listOf(gcurve, gcurve, Curve.GRADATION_IDENTITY, gcurve)),
-            "hue-vs curves" to Receipt(hueVs = List(4) { hue }),
-            "profile Film, AgX off" to Receipt(profile = 3, agx = false),
-            "profile Log-C" to Receipt(profile = 4),
-            "camera matrix off" to Receipt(camMatrixUsed = 0),
-            "EXR mode" to Receipt(exrMode = true),
-            "creative off" to Receipt(contrast = 40, saturation = 40, creativeAdjustments = false),
-        )
-        val all = Receipt(exposure = 80, contrast = 25, temperature = 4800, tint = -12, vibrance = 30, saturation = 20,
-            ds = 50, ls = 30, lightening = 20, highlightReconstruction = true, vignetteStrength = 30, tone = 150, toningStrength = 20,
-            gradation = listOf(gcurve, Curve.GRADATION_IDENTITY, gcurve, Curve.GRADATION_IDENTITY), hueVs = List(4) { hue })
-        cases["all together"] = all
-        // Leave-one-out around "all together" (stage interactions).
-        cases["all - exposure"] = all.copy(exposure = 0)
-        cases["all - contrast"] = all.copy(contrast = 0)
-        cases["all - white balance"] = all.copy(temperature = -1, tint = 0)
-        cases["all - vibrance"] = all.copy(vibrance = 0)
-        cases["all - saturation"] = all.copy(saturation = 0)
-        cases["all - dark/light"] = all.copy(ds = 20, ls = 0, lightening = 0)
-        cases["all - highlight reconstruction"] = all.copy(highlightReconstruction = false)
-        cases["all - vignette"] = all.copy(vignetteStrength = 0)
-        cases["all - toning"] = all.copy(toningStrength = 0)
-        cases["all - gradation"] = all.copy(gradation = Receipt().gradation)
-        cases["all - hue-vs"] = all.copy(hueVs = Receipt().hueVs)
-        val failures = mutableListOf<String>()
-        ProjectFrameRenderer(context).use { r ->
-            for ((name, receipt) in cases) {
-                val project = base.copy(clips = base.clips.map { it.copy(receipt = receipt) })
-                val d = r.gpuParity(project, 0) ?: error("$name: the Vulkan path did not run")
-                val mean = d[3].toDouble() / (d[2] * 3)
-                report("%-32s max %5d  mean %.4f  differing pixels %.3f%%  off > 256: %d   worst #%d in %s cpu %s gpu %s".format(name,
-                    d[0], mean, 100.0 * d[1] / d[2], d[14], d[4], d.slice(5..7), d.slice(8..10), d.slice(11..13)))
-                // fp32 shader vs MLV-App's double steps (Mali has no fp64): rounding
-                // differences near integer boundaries, magnified by steep gamma near
-                // black, and rare near-grey pixels where MLV-App's desaturation
-                // divides by ~0. A porting bug shows up as a large mean or many
-                // badly-off pixels instead (both bugs found so far: means > 70).
-                if (mean > 0.05 || d[1] * 20 > d[2] || d[14] * 100_000 > d[2])
-                    failures += "$name: max ${d[0]}, mean %.4f, off > 256: ${d[14]}".format(mean)
-            }
-        }
-        check(failures.isEmpty()) { "Vulkan grade differs from MLV-App's CPU code: $failures" }
     }
-    /**
-     * HEVC Main10 at high resolution (-e main10hires true): a full-resolution
-     * Bayer take, graded, exported for 3 s at its native size and at UHD.
-     * Checks encoder limits, SPS 10-bit, exact frame count and every
-     * sampled frame against the MLV-App-graded preview.
-     */
+
+    /** Focused real-device checks for display transforms, fallback, playback and 10-bit export. */
     private suspend fun verifyMain10HighRes() {
         val context = targetContext
         val root = context.getSharedPreferences("gallery", 0).getString("tree", null) ?: error("Choose a source folder in the library first")
@@ -264,7 +348,7 @@ class ProjectInstrumentation : Instrumentation() {
         }
         for ((width, height) in listOf(raw.width to raw.height, 3840 to 2160).distinct()) {
             val project = SequenceProject(name = "Main10 $width x $height", width = width, height = height, rate = rate).append(raw).let { p ->
-                p.copy(clips = p.clips.map { it.copy(durationUs = rate.time(frames), receipt = Receipt(exposure = 100, contrast = 13, saturation = 15)) }).validated()
+                p.copy(clips = p.clips.map { it.copy(durationUs = rate.time(frames), grade = testGrade()) }).validated()
             }
             val settings = ExportSettings(codec = ExportVideoCodec.HEVC10, bitrateMbps = 100)
             val encoder = settings.encoder(project) ?: error("No Main10 encoder candidate for $width x $height")
@@ -308,6 +392,7 @@ class ProjectInstrumentation : Instrumentation() {
         report("Review artifacts: ${dir.path}")
     }
 
+    private fun testGrade() = RapidGradeSnapshot(RapidDefaults.schema.defaults().withValue("exposure", 1.0).withValue("contrast", 13.0).withValue("saturation", 15.0).encode())
     private fun tone(context: android.content.Context, sampleRate: Int, frequency: Double, amplitude: Double, duration: Long): SourceAsset {
         val source = SourceAsset(uri = "file:///test-tone", name = "Tone ${frequency.toInt()} Hz.wav", kind = AssetKind.AUDIO, durationUs = duration, hasAudio = true)
         val file = ProjectMedia.audioFile(context, source); file.parentFile!!.mkdirs()

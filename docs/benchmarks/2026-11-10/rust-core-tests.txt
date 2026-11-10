@@ -1,0 +1,15 @@
+   Compiling crs-rapidraw-core v0.1.0 (/Users/monikamalinowska/AndroidStudioProjects/CinematicRAWStudio-Android/app/src/main/rust/rapidraw-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.99s
+     Running unittests src/lib.rs (app/src/main/rust/rapidraw-core/target/debug/deps/crs_rapidraw_core-d442ffe92771fb7f)
+
+running 7 tests
+test tests::ffi_rejects_invalid_input_and_small_output ... ok
+test tests::wheels_and_calibration_use_upstream_divisors ... ok
+test tests::baseline_metadata_is_separate_from_user_exposure ... ok
+test tests::masks_filter_visibility_and_keep_local_exposure_units ... ok
+test tests::packed_layout_matches_shader_storage_offsets ... ok
+test tests::white_balance_is_identity_at_as_shot_and_changes_with_shift ... ok
+test tests::upstream_exposure_units_and_bypass_are_preserved ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

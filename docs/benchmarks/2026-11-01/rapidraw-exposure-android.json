@@ -1,0 +1,68 @@
+{
+  "commit": "f1d71a69eef813432db214f77969f567c41ff1d7",
+  "stage": "apply_linear_exposure",
+  "scope": "Same-device Android Vulkan; isolated function only",
+  "device": "25080RABDG",
+  "driver": "device=Mali-G615 MC2 vendor=5045 driver=184553472 api=4206839",
+  "naga_version": "29.0.4",
+  "compiler": "Android (12027248, +pgo, -bolt, +lto, -mlgo, based on r522817) clang version 18.0.1 (https://android.googlesource.com/toolchain/llvm-project d8003a456d14a3deb8054cdaa529ffbf02d9b262)\nTarget: aarch64-unknown-linux-android30\nThread model: posix\nInstalledDir: /Users/monikamalinowska/Library/Android/sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/darwin-x86_64/bin",
+  "glslang_version": "Glslang Version: 11:16.6.0\nESSL Version: OpenGL ES GLSL 3.20 glslang Khronos. 16.6.0\nGLSL Version: 4.60 glslang Khronos. 16.6.0\nSPIR-V Version 0x00010600, Revision 1\nGLSL.std.450 Version 100, Revision 1\nKhronos Tool ID 8\nSPIR-V Generator Version 11\nGL_KHR_vulkan_glsl version 100\nARB_GL_gl_spirv version 100",
+  "hashes": {
+    "reference.wgsl": "5aeabade02f2ad99fc79f8c54fd9e7e399fc664ce5c98d8af68b2a0628cd0708",
+    "reference.spv": "8e222f7493b82d5c234a2ef652eb5e3c70c62401cdc430dc99fa33fcc6fa12b9",
+    "translated.spv": "3e52775b715be958e18c365b5025ce13b7aa874ed0c6b645fd359ad7118ad365",
+    "runner": "0cc54013659d11d7d3b6cde187b4d5e4a632720334b50a422df5d8b1357d4dad"
+  },
+  "inputs": {
+    "1": "19107e079a71c1888a8e1b0f288b15a242d40ae812b7d17959521dff91bb2649",
+    "63": "796ad2401c9e7e7889e4a9e7789a14d41ab0c5df2db8d2a7c70ea231d34f4585",
+    "65": "179306aceae1011ea631831e08644d94c2416315ffc645d01c83fd7607f3bb8a",
+    "4233": "d86883f12c8177006d6531638073f7582bb9c0cb787c5a8ee1e9b5c97257e019"
+  },
+  "cases": [
+    {
+      "samples": 1,
+      "unequal_components": 0,
+      "max_absolute": 0.0,
+      "mean_absolute": 0.0,
+      "max_ulp": 0,
+      "zero_ev_bit_identity": true,
+      "quantized_rgb16_max": 0,
+      "quantized_rgb16_unequal": 0,
+      "examples": []
+    },
+    {
+      "samples": 63,
+      "unequal_components": 0,
+      "max_absolute": 0.0,
+      "mean_absolute": 0.0,
+      "max_ulp": 0,
+      "zero_ev_bit_identity": true,
+      "quantized_rgb16_max": 0,
+      "quantized_rgb16_unequal": 0,
+      "examples": []
+    },
+    {
+      "samples": 65,
+      "unequal_components": 0,
+      "max_absolute": 0.0,
+      "mean_absolute": 0.0,
+      "max_ulp": 0,
+      "zero_ev_bit_identity": true,
+      "quantized_rgb16_max": 0,
+      "quantized_rgb16_unequal": 0,
+      "examples": []
+    },
+    {
+      "samples": 4233,
+      "unequal_components": 0,
+      "max_absolute": 0.0,
+      "mean_absolute": 0.0,
+      "max_ulp": 0,
+      "zero_ev_bit_identity": true,
+      "quantized_rgb16_max": 0,
+      "quantized_rgb16_unequal": 0,
+      "examples": []
+    }
+  ]
+}

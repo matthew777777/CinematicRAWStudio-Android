@@ -149,7 +149,7 @@ fun ExportPanel(prepare: (suspend () -> SequenceProject)? = null, beforeStart: s
 
 private fun sizeText(mb: Double) = if (mb >= 1000) "%.1f GB".format(mb / 1000) else "%.0f MB".format(mb)
 
-/** Export presets: common deliveries, all from the same MLV-App-graded frames. */
+/** Export presets: common deliveries, all from the same RapidRAW-graded frames. */
 enum class ExportPreset(val title: String, val note: String, val settings: ExportSettings) {
     Uhd10("UHD 10-bit HEVC", "2160p · HEVC Main10 · 100 Mbps · grading master", ExportSettings(ExportVideoCodec.HEVC10, 2160, 100)),
     Source10("Source 10-bit master", "Full source size (fitted to the encoder) · HEVC Main10 · 150 Mbps", ExportSettings(ExportVideoCodec.HEVC10, 0, 150)),

@@ -1,0 +1,78 @@
+{
+  "adapter": "Apple M1 / Metal",
+  "cases": [
+    {
+      "case": "default",
+      "differing_components": 0,
+      "milliseconds": 83.922708
+    },
+    {
+      "case": "exposure",
+      "differing_components": 4930,
+      "milliseconds": 4.2998330000000005
+    },
+    {
+      "case": "tonal",
+      "differing_components": 5343,
+      "milliseconds": 6.955875000000001
+    },
+    {
+      "case": "detail",
+      "differing_components": 4092,
+      "milliseconds": 74.160791
+    },
+    {
+      "case": "noise",
+      "differing_components": 1878,
+      "milliseconds": 3.547542
+    },
+    {
+      "case": "creative",
+      "differing_components": 3909,
+      "milliseconds": 34.867791000000004
+    },
+    {
+      "case": "grain",
+      "differing_components": 3034,
+      "milliseconds": 72.1185
+    },
+    {
+      "case": "monochrome",
+      "differing_components": 5179,
+      "milliseconds": 5.084708
+    },
+    {
+      "case": "agx",
+      "differing_components": 5265,
+      "milliseconds": 4.023542
+    },
+    {
+      "case": "filament",
+      "differing_components": 6111,
+      "milliseconds": 3.201625
+    },
+    {
+      "case": "aces2",
+      "differing_components": 6131,
+      "milliseconds": 17.311458
+    },
+    {
+      "case": "wheels",
+      "differing_components": 174,
+      "milliseconds": 3.671416
+    },
+    {
+      "case": "curves",
+      "differing_components": 953,
+      "milliseconds": 3.450417
+    },
+    {
+      "case": "mixer",
+      "differing_components": 2906,
+      "milliseconds": 5.248
+    }
+  ],
+  "height": 32,
+  "scope": "Independent graph bring-up on synthetic linear RGBA16F; not reference image parity or throughput acceptance",
+  "width": 64
+}

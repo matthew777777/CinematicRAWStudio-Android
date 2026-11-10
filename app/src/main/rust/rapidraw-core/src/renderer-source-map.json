@@ -1,0 +1,22 @@
+{
+  "commit": "f1d71a69eef813432db214f77969f567c41ff1d7",
+  "upstream": "src-tauri/src/gpu_processing.rs",
+  "ranges": [
+    {
+      "first_line": 19,
+      "last_line": 42
+    },
+    {
+      "first_line": 822,
+      "last_line": 897
+    },
+    {
+      "first_line": 923,
+      "last_line": 1046
+    },
+    {
+      "first_line": 1115,
+      "last_line": 3176
+    }
+  ]
+}

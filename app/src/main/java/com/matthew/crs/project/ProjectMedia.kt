@@ -77,84 +77,90 @@ object ProjectMedia {
     }
 }
 
-/** Render the same scheduled, graded source frame for the monitor and the encoder. */
-class ProjectFrameRenderer(private val context: Context) : AutoCloseable {
+/** One RapidRAW Vulkan engine for scheduled playback and full-resolution exports. */
+class ProjectFrameRenderer(private val context: Context, private val proxy: Boolean = false) : AutoCloseable {
     private var assetId: String? = null
-    private var clip: CrawClip? = null
-    private var gpu: GpuFrameRenderer? = null
-    private var grade: MlvGrade? = null
-    private var cpu: Bitmap? = null
+    private var source: com.matthew.crs.rapidraw.RapidMhcSource? = null
+    private var compute: com.matthew.crs.rapidraw.RapidComputeSession? = null
+    private var metadata: com.matthew.crs.rapidraw.RapidSourceMetadata? = null
     private var outputs = emptyArray<Bitmap>()
     private var next = 0
+    private data class CachedFrame(val bitmap: Bitmap, val metadata: com.matthew.crs.rapidraw.RapidSourceMetadata)
+    private val cache = object : LinkedHashMap<String, CachedFrame>(16, .75f, true) {}
+    private var cachedGrade: String? = null
+    private var cachedGradeHash = ""
+    private fun gradeHash(encoded: String): String {
+        if(cachedGrade != encoded) {
+            cachedGrade = encoded
+            cachedGradeHash = java.security.MessageDigest.getInstance("SHA-256").digest(encoded.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+        }
+        return cachedGradeHash
+    }
+    private var cacheBytes = 0L
+    private val cacheLimit = 64L * 1024 * 1024
+    private fun cacheFrame(key: String, bitmap: Bitmap, sourceMetadata: com.matthew.crs.rapidraw.RapidSourceMetadata) {
+        if (!proxy || bitmap.allocationByteCount > cacheLimit) return
+        cache[key] = CachedFrame(bitmap, sourceMetadata); cacheBytes += bitmap.allocationByteCount
+        while (cacheBytes > cacheLimit && cache.isNotEmpty()) {
+            val entry = cache.entries.iterator().next()
+            cacheBytes -= entry.value.bitmap.allocationByteCount
+            entry.value.bitmap.recycle(); cache.remove(entry.key)
+        }
+    }
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private fun prepare(sample: VideoSample) {
+        check(sample.clip.legacyGrade == null) { "${sample.asset.name} has a legacy grade. Reset its grade to render with RapidRAW." }
+        if (assetId != sample.asset.id) {
+            closeSource()
+            val opened = com.matthew.crs.rapidraw.RapidMhcSource.open(context, Uri.parse(sample.asset.uri), proxy)
+            source = opened
+            compute = com.matthew.crs.rapidraw.RapidComputeSession(opened.width, opened.height)
+            assetId = sample.asset.id
+        }
+        metadata = source!!.upload(sample.sourceFrame, compute!!)
+    }
     fun render(project: SequenceProject, frame: Long): Bitmap {
-        if (outputs.firstOrNull()?.width != project.width || outputs.firstOrNull()?.height != project.height) {
-            // Published bitmaps are left to GC; Compose may still be drawing the last one.
-            outputs = Array(2) { Bitmap.createBitmap(project.width, project.height, Bitmap.Config.ARGB_8888) }
+        val monitorScale = if (proxy) minOf(1.0, 1280.0 / maxOf(project.width, project.height)) else 1.0
+        val monitorWidth = (project.width * monitorScale).toInt().coerceAtLeast(2)
+        val monitorHeight = (project.height * monitorScale).toInt().coerceAtLeast(2)
+        if (outputs.firstOrNull()?.width != monitorWidth || outputs.firstOrNull()?.height != monitorHeight) {
+            // A published monitor bitmap may still be referenced by Compose.
+            outputs = Array(2) { Bitmap.createBitmap(monitorWidth, monitorHeight, Bitmap.Config.ARGB_8888) }
         }
         val out = outputs[next]; next = 1 - next
         val canvas = Canvas(out); canvas.drawColor(Color.BLACK)
         val sample = SequenceSchedule(project).videoAt(project.rate.time(frame)) ?: return out
-        val source = open(sample)
-        val g = gpu; val developer = grade
-        val bitmap = if (g != null && developer != null) {
-            g.renderGraded(sample.sourceFrame, developer) { sample.clip.receipt }
-        } else {
-            require(sample.clip.receipt == Receipt()) { "RAW grading requires the GPU pipeline for ${sample.asset.name}" }
-            cpu!!.takeIf { source.render(sample.sourceFrame, it) }
-        } ?: error("Cannot render frame ${sample.sourceFrame + 1} of ${sample.asset.name}")
-        val scale = minOf(project.width.toFloat() / bitmap.width, project.height.toFloat() / bitmap.height)
-        val width = bitmap.width * scale; val height = bitmap.height * scale
-        canvas.drawBitmap(bitmap, null, RectF((project.width - width) / 2, (project.height - height) / 2,
-            (project.width + width) / 2, (project.height + height) / 2), paint)
+        check(sample.clip.legacyGrade == null) { "Reset this clip's legacy grade before rendering" }
+        val key = "${sample.asset.uri}:${sample.sourceFrame}:${gradeHash(sample.clip.grade.encoded)}"
+        val cached = if (proxy) cache[key] else null
+        val bitmap = if (cached != null) { metadata = cached.metadata; cached.bitmap } else {
+            prepare(sample)
+            compute!!.render(sample.clip.grade.grade(), metadata!!).also { cacheFrame(key, it, metadata!!) }
+        }
+        try {
+            val scale = minOf(out.width.toFloat() / bitmap.width, out.height.toFloat() / bitmap.height)
+            val width = bitmap.width * scale; val height = bitmap.height * scale
+            canvas.drawBitmap(bitmap, null, RectF((out.width-width)/2, (out.height-height)/2,
+                (out.width+width)/2, (out.height+height)/2), paint)
+        } finally { if (cached == null && (!proxy || cache[key]?.bitmap !== bitmap)) bitmap.recycle() }
         return out
     }
-    private fun open(sample: VideoSample): CrawClip {
-        if (assetId != sample.asset.id) {
-            closeSource()
-            val source = CrawClip.open(context, Uri.parse(sample.asset.uri))
-                ?: error("Missing source: ${sample.asset.name}. Relink it in the clip inspector.")
-            clip = source
-            assetId = sample.asset.id
-            if (!source.info.rgb && GpuPipeline.init(context)) {
-                gpu = GpuFrameRenderer(source, source.info.width, source.info.height)
-                grade = MlvGrade(source)
-            } else cpu = source.newPreviewBitmap()
-        }
-        return clip!!.also { it.setRawTools(sample.clip.receipt.rawToolValues()) }
-    }
-    /** Processed RGB16 straight to the encoder's P010 planes, never through the ARGB preview. */
     fun renderP010(project: SequenceProject, frame: Long, image: android.media.Image) {
         val sample = SequenceSchedule(project).videoAt(project.rate.time(frame))
         if (sample == null) {
             check(P010Output.black(image, project.width, project.height)) { "Encoder did not expose writable P010 planes" }
             return
         }
-        val source = open(sample)
-        val g = gpu; val developer = grade
-        val ok = if (g != null && developer != null) {
-            g.writeGradedP010(sample.sourceFrame, developer, { sample.clip.receipt }, image, project.width, project.height)
-        } else {
-            render(project, frame)
-            source.writeDevelopedP010(image, project.width, project.height)
-        }
-        check(ok) { "Cannot write frame ${sample.sourceFrame + 1} of ${sample.asset.name} to the encoder’s P010 planes" }
+        prepare(sample)
+        compute!!.writeP010(sample.clip.grade.grade(), metadata!!, image, project.width, project.height)
     }
-    /** Vulkan grade vs MLV-App's CPU code on one frame (parity tests). */
-    fun gpuParity(project: SequenceProject, frame: Long): LongArray? {
-        val sample = SequenceSchedule(project).videoAt(project.rate.time(frame)) ?: return null
-        open(sample)
-        return gpu?.gpuParity(sample.sourceFrame, grade ?: return null) { sample.clip.receipt }
-    }
-    val asShotKelvin: Double? get() = grade?.asShot?.first
+    val asShotKelvin: Double? get() = metadata?.asShotTemperature
     private fun closeSource() {
-        gpu?.close(); gpu = null
-        grade?.close(); grade = null
-        cpu?.recycle(); cpu = null
-        clip?.close(); clip = null
-        assetId = null
+        compute?.close(); compute = null
+        source?.close(); source = null
+        metadata = null; assetId = null
     }
-    override fun close() { closeSource(); outputs = emptyArray() }
+    override fun close() { closeSource(); cache.values.forEach { it.bitmap.recycle() }; cache.clear(); cacheBytes = 0; outputs = emptyArray() }
 }
 
 object P010Output {

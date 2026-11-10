@@ -1,0 +1,217 @@
+Device=25080RABDG source=4080x2040 fps=30.0 frames=30
+Wall-clock stages include synchronization/readback; nested/concurrent stages are not additive. First two renders are warm-up.
+state before default thermal=0 battery_tenths_c=335 process_pss_kb=51868
+render default full-resolution frames=30 seconds=5.604696001 fps=5.352654273246461
+raw_tools.configure count=30 mean=0.013 p95=0.014 max=0.018 ms
+decode.native count=30 mean=24.906 p95=31.768 max=31.916 ms
+raw_tools.native count=30 mean=0.001 p95=0.001 max=0.001 ms
+decode.shade_copy count=30 mean=22.868 p95=30.263 max=32.950 ms
+decode.raw_tools count=30 mean=49.643 p95=58.938 max=60.333 ms
+grade.prepare count=30 mean=0.139 p95=0.187 max=0.214 ms
+rcd.full count=30 mean=45.724 p95=48.667 max=48.889 ms
+grade.gpu_attempt_readback count=30 mean=73.808 p95=80.840 max=81.439 ms
+output.bitmap_fit count=30 mean=14.229 p95=15.512 max=16.043 ms
+playback default proxy source_fps=30.0 scheduled=30 delivered=1 missed=29 last=2 max_delivery_gap_ms=2079.418385 (headless delivery, not display presentation)
+decode.native count=6 mean=98.920 p95=133.302 max=133.302 ms
+raw_tools.native count=6 mean=0.001 p95=0.001 max=0.001 ms
+decode.shade_copy count=6 mean=80.922 p95=124.279 max=124.279 ms
+decode.playback_raw_tools count=6 mean=180.898 p95=213.043 max=213.043 ms
+grade.as_shot_fit count=1 mean=1719.532 p95=1719.532 max=1719.532 ms
+grade.prepare count=1 mean=161.332 p95=161.332 max=161.332 ms
+rcd.playback count=1 mean=15.441 p95=15.441 max=15.441 ms
+grade.playback_gpu_attempt_readback count=1 mean=56.726 p95=56.726 max=56.726 ms
+export default AVC 1280x720 frames=30 seconds=8.702031923 fps=3.447470690231344
+codec.output_wait count=774 mean=10.600 p95=11.796 max=17.957 ms
+raw_tools.configure count=30 mean=0.015 p95=0.021 max=0.023 ms
+decode.native count=30 mean=19.052 p95=20.654 max=27.317 ms
+raw_tools.native count=30 mean=0.001 p95=0.001 max=0.001 ms
+decode.shade_copy count=30 mean=22.802 p95=33.142 max=36.428 ms
+decode.raw_tools count=30 mean=44.329 p95=57.957 max=61.358 ms
+grade.as_shot_fit count=1 mean=1851.102 p95=1851.102 max=1851.102 ms
+grade.prepare count=30 mean=5.131 p95=0.500 max=148.944 ms
+rcd.full count=30 mean=46.244 p95=49.827 max=53.280 ms
+grade.gpu_attempt_readback count=30 mean=79.813 p95=101.654 max=164.146 ms
+output.bitmap_fit count=30 mean=9.829 p95=11.343 max=12.091 ms
+export.render count=30 mean=273.485 p95=219.140 max=3031.964 ms
+codec.upload_draw_submit count=30 mean=3.184 p95=3.214 max=18.459 ms
+codec.mux_write count=30 mean=0.703 p95=1.748 max=3.087 ms
+state after default AVC thermal=0 battery_tenths_c=335 process_pss_kb=611646
+export default HEVC10 1280x720 frames=30 seconds=8.161715154 fps=3.675697991652797
+codec.input_wait count=31 mean=0.869 p95=2.576 max=3.710 ms
+codec.output_wait count=745 mean=10.502 p95=11.809 max=23.822 ms
+raw_tools.configure count=30 mean=0.025 p95=0.036 max=0.036 ms
+decode.native count=32 mean=32.173 p95=57.478 max=59.776 ms
+raw_tools.native count=32 mean=0.001 p95=0.001 max=0.001 ms
+decode.shade_copy count=32 mean=29.950 p95=43.778 max=63.004 ms
+decode.raw_tools count=1 mean=58.834 p95=58.834 max=58.834 ms
+grade.as_shot_fit count=1 mean=2905.959 p95=2905.959 max=2905.959 ms
+grade.prepare count=30 mean=5.325 p95=0.312 max=154.156 ms
+rcd.full count=30 mean=50.980 p95=75.257 max=85.271 ms
+grade.gpu_attempt_p010 count=30 mean=67.545 p95=73.342 max=126.945 ms
+export.render_p010 count=30 mean=260.126 p95=151.541 max=4408.839 ms
+codec.p010_submit count=30 mean=2.939 p95=5.153 max=9.310 ms
+codec.mux_write count=30 mean=1.138 p95=2.136 max=2.205 ms
+state after default HEVC10 thermal=0 battery_tenths_c=345 process_pss_kb=775535
+state before agx thermal=0 battery_tenths_c=345 process_pss_kb=775539
+render agx full-resolution frames=30 seconds=5.193017615 fps=5.776987914184073
+raw_tools.configure count=30 mean=0.014 p95=0.017 max=0.017 ms
+decode.native count=30 mean=18.964 p95=21.564 max=24.439 ms
+raw_tools.native count=30 mean=0.001 p95=0.001 max=0.001 ms
+decode.shade_copy count=30 mean=23.271 p95=30.076 max=31.951 ms
+decode.raw_tools count=30 mean=44.747 p95=51.532 max=52.462 ms
+grade.prepare count=30 mean=0.110 p95=0.155 max=0.177 ms
+rcd.full count=30 mean=43.695 p95=47.707 max=49.686 ms
+grade.gpu_attempt_readback count=30 mean=66.033 p95=72.423 max=73.291 ms
+output.bitmap_fit count=30 mean=15.044 p95=16.631 max=18.314 ms
+playback agx proxy source_fps=30.0 scheduled=30 delivered=1 missed=29 last=0 max_delivery_gap_ms=2672.81377 (headless delivery, not display presentation)
+decode.native count=6 mean=119.849 p95=175.511 max=175.511 ms
+raw_tools.native count=6 mean=0.001 p95=0.001 max=0.001 ms
+decode.shade_copy count=6 mean=97.724 p95=204.595 max=204.595 ms
+decode.playback_raw_tools count=6 mean=219.929 p95=381.857 max=381.857 ms
+grade.as_shot_fit count=1 mean=2160.540 p95=2160.540 max=2160.540 ms
+grade.prepare count=1 mean=284.273 p95=284.273 max=284.273 ms
+rcd.playback count=1 mean=23.282 p95=23.282 max=23.282 ms
+grade.playback_gpu_attempt_readback count=1 mean=52.301 p95=52.301 max=52.301 ms
+export agx AVC 1280x720 frames=30 seconds=9.139948846 fps=3.282294081233198
+codec.output_wait count=825 mean=10.609 p95=11.754 max=16.193 ms
+raw_tools.configure count=30 mean=0.018 p95=0.044 max=0.064 ms
+decode.native count=30 mean=23.460 p95=39.548 max=82.412 ms
+raw_tools.native count=30 mean=0.001 p95=0.001 max=0.001 ms
+decode.shade_copy count=30 mean=23.591 p95=29.818 max=30.200 ms
+decode.raw_tools count=30 mean=49.719 p95=61.697 max=104.575 ms
+grade.as_shot_fit count=1 mean=2127.607 p95=2127.607 max=2127.607 ms
+grade.prepare count=30 mean=10.130 p95=0.215 max=300.287 ms
+rcd.full count=30 mean=46.337 p95=54.848 max=55.167 ms
+grade.gpu_attempt_readback count=30 mean=71.952 p95=81.730 max=180.628 ms
+output.bitmap_fit count=30 mean=10.304 p95=11.831 max=12.330 ms
+export.render count=30 mean=291.341 p95=239.148 max=3660.305 ms
+codec.upload_draw_submit count=30 mean=3.080 p95=3.296 max=21.049 ms
+codec.mux_write count=30 mean=1.043 p95=3.519 max=4.522 ms
+state after agx AVC thermal=0 battery_tenths_c=345 process_pss_kb=1002961
+export agx HEVC10 1280x720 frames=30 seconds=7.144143462 fps=4.199243780527542
+codec.input_wait count=31 mean=0.830 p95=1.589 max=3.247 ms
+codec.output_wait count=647 mean=10.435 p95=11.659 max=15.959 ms
+raw_tools.configure count=30 mean=0.032 p95=0.047 max=0.047 ms
+decode.native count=32 mean=33.502 p95=49.359 max=73.357 ms
+raw_tools.native count=32 mean=0.001 p95=0.001 max=0.002 ms
+decode.shade_copy count=32 mean=36.217 p95=56.999 max=74.275 ms
+decode.raw_tools count=1 mean=62.830 p95=62.830 max=62.830 ms
+grade.as_shot_fit count=1 mean=2173.612 p95=2173.612 max=2173.612 ms
+grade.prepare count=30 mean=9.834 p95=0.470 max=288.568 ms
+rcd.full count=30 mean=48.234 p95=53.969 max=59.252 ms
+grade.gpu_attempt_p010 count=30 mean=57.304 p95=62.923 max=126.837 ms
+export.render_p010 count=30 mean=223.746 p95=115.706 max=3701.974 ms
+codec.p010_submit count=30 mean=3.538 p95=4.880 max=6.555 ms
+codec.mux_write count=30 mean=1.688 p95=2.841 max=3.168 ms
+state after agx HEVC10 thermal=0 battery_tenths_c=345 process_pss_kb=1068561
+state before aces thermal=0 battery_tenths_c=345 process_pss_kb=1068561
+render aces full-resolution frames=30 seconds=7.001595154 fps=4.284737883318067
+raw_tools.configure count=30 mean=0.019 p95=0.028 max=0.029 ms
+decode.native count=30 mean=28.243 p95=49.228 max=90.657 ms
+raw_tools.native count=30 mean=0.001 p95=0.001 max=0.001 ms
+decode.shade_copy count=30 mean=28.946 p95=48.332 max=57.429 ms
+decode.raw_tools count=30 mean=59.589 p95=107.533 max=141.266 ms
+grade.prepare count=30 mean=0.095 p95=0.142 max=0.212 ms
+rcd.full count=30 mean=56.408 p95=86.936 max=89.296 ms
+grade.gpu_attempt_readback count=30 mean=94.644 p95=125.672 max=129.973 ms
+output.bitmap_fit count=30 mean=17.202 p95=23.538 max=37.527 ms
+playback aces proxy source_fps=30.0 scheduled=30 delivered=1 missed=29 last=0 max_delivery_gap_ms=2881.376385 (headless delivery, not display presentation)
+decode.native count=6 mean=155.935 p95=208.136 max=208.136 ms
+raw_tools.native count=6 mean=0.001 p95=0.001 max=0.001 ms
+decode.shade_copy count=6 mean=77.407 p95=116.302 max=116.302 ms
+decode.playback_raw_tools count=6 mean=235.192 p95=309.585 max=309.585 ms
+grade.as_shot_fit count=1 mean=2328.651 p95=2328.651 max=2328.651 ms
+grade.prepare count=1 mean=302.585 p95=302.585 max=302.585 ms
+rcd.playback count=1 mean=17.143 p95=17.143 max=17.143 ms
+grade.playback_gpu_attempt_readback count=1 mean=120.086 p95=120.086 max=120.086 ms
+export aces AVC 1280x720 frames=30 seconds=9.986980693 fps=3.003910883799683
+codec.output_wait count=905 mean=10.597 p95=11.828 max=17.940 ms
+raw_tools.configure count=30 mean=0.018 p95=0.029 max=0.040 ms
+decode.native count=30 mean=21.855 p95=36.383 max=40.051 ms
+raw_tools.native count=30 mean=0.001 p95=0.001 max=0.002 ms
+decode.shade_copy count=30 mean=24.333 p95=32.902 max=40.360 ms
+decode.raw_tools count=30 mean=48.975 p95=71.250 max=73.505 ms
+grade.as_shot_fit count=1 mean=2233.047 p95=2233.047 max=2233.047 ms
+grade.prepare count=30 mean=10.457 p95=0.416 max=309.055 ms
+rcd.full count=30 mean=47.447 p95=55.282 max=63.461 ms
+grade.gpu_attempt_readback count=30 mean=92.670 p95=107.704 max=170.156 ms
+output.bitmap_fit count=30 mean=10.710 p95=11.839 max=12.057 ms
+export.render count=30 mean=319.081 p95=243.611 max=3852.517 ms
+codec.upload_draw_submit count=30 mean=3.137 p95=6.756 max=11.699 ms
+codec.mux_write count=30 mean=0.796 p95=1.547 max=1.786 ms
+state after aces AVC thermal=0 battery_tenths_c=356 process_pss_kb=1214665
+export aces HEVC10 1280x720 frames=30 seconds=7.786929616 fps=3.8526096265668364
+codec.input_wait count=31 mean=1.038 p95=3.013 max=5.204 ms
+codec.output_wait count=699 mean=10.588 p95=12.051 max=20.006 ms
+raw_tools.configure count=30 mean=0.032 p95=0.044 max=0.047 ms
+decode.native count=32 mean=34.008 p95=52.927 max=55.630 ms
+raw_tools.native count=32 mean=0.001 p95=0.001 max=0.002 ms
+decode.shade_copy count=32 mean=38.075 p95=64.672 max=68.174 ms
+decode.raw_tools count=1 mean=74.971 p95=74.971 max=74.971 ms
+grade.as_shot_fit count=1 mean=2160.035 p95=2160.035 max=2160.035 ms
+grade.prepare count=30 mean=11.002 p95=1.061 max=322.643 ms
+rcd.full count=30 mean=47.071 p95=54.826 max=55.198 ms
+grade.gpu_attempt_p010 count=30 mean=78.799 p95=85.351 max=147.452 ms
+export.render_p010 count=30 mean=245.433 p95=135.804 max=3752.374 ms
+codec.p010_submit count=30 mean=3.332 p95=4.200 max=4.840 ms
+codec.mux_write count=30 mean=1.781 p95=4.621 max=6.126 ms
+state after aces HEVC10 thermal=0 battery_tenths_c=356 process_pss_kb=1279750
+state before sharpen_cpu thermal=0 battery_tenths_c=356 process_pss_kb=1279750
+render sharpen_cpu full-resolution frames=30 seconds=13.248010539 fps=2.264490952183715
+raw_tools.configure count=30 mean=0.026 p95=0.073 max=0.084 ms
+decode.native count=30 mean=28.994 p95=42.388 max=44.911 ms
+raw_tools.native count=30 mean=0.001 p95=0.001 max=0.001 ms
+decode.shade_copy count=30 mean=35.330 p95=41.218 max=42.077 ms
+decode.raw_tools count=30 mean=66.204 p95=75.681 max=85.188 ms
+grade.prepare count=30 mean=0.065 p95=0.075 max=0.075 ms
+rcd.full count=30 mean=44.871 p95=49.352 max=56.691 ms
+grade.gpu_attempt_readback count=30 mean=0.018 p95=0.020 max=0.029 ms
+grade.cpu_readback count=30 mean=311.921 p95=334.731 max=339.009 ms
+output.bitmap_fit count=30 mean=14.966 p95=18.476 max=19.508 ms
+playback sharpen_cpu proxy source_fps=30.0 scheduled=30 delivered=1 missed=29 last=0 max_delivery_gap_ms=2673.715769 (headless delivery, not display presentation)
+decode.native count=6 mean=143.826 p95=235.101 max=235.101 ms
+raw_tools.native count=6 mean=0.001 p95=0.001 max=0.001 ms
+decode.shade_copy count=6 mean=82.321 p95=103.376 max=103.376 ms
+decode.playback_raw_tools count=6 mean=227.942 p95=300.772 max=300.772 ms
+grade.as_shot_fit count=1 mean=2193.701 p95=2193.701 max=2193.701 ms
+grade.prepare count=1 mean=201.455 p95=201.455 max=201.455 ms
+rcd.playback count=1 mean=18.230 p95=18.230 max=18.230 ms
+grade.playback_gpu_attempt_readback count=1 mean=0.020 p95=0.020 max=0.020 ms
+grade.cpu_readback count=1 mean=122.109 p95=122.109 max=122.109 ms
+export sharpen_cpu AVC 1280x720 frames=30 seconds=17.114358078 fps=1.7529141241098674
+codec.output_wait count=1615 mean=10.416 p95=11.156 max=21.725 ms
+raw_tools.configure count=30 mean=0.027 p95=0.068 max=0.273 ms
+decode.native count=30 mean=30.594 p95=38.366 max=39.972 ms
+raw_tools.native count=30 mean=0.001 p95=0.001 max=0.002 ms
+decode.shade_copy count=30 mean=37.060 p95=43.760 max=65.562 ms
+decode.raw_tools count=30 mean=69.367 p95=79.698 max=92.206 ms
+grade.as_shot_fit count=1 mean=2167.431 p95=2167.431 max=2167.431 ms
+grade.prepare count=30 mean=6.752 p95=0.083 max=200.478 ms
+rcd.full count=30 mean=46.133 p95=55.071 max=65.481 ms
+grade.gpu_attempt_readback count=30 mean=0.018 p95=0.026 max=0.050 ms
+grade.cpu_readback count=30 mean=319.658 p95=366.202 max=533.425 ms
+output.bitmap_fit count=30 mean=11.173 p95=13.636 max=22.207 ms
+export.render count=30 mean=559.184 p95=505.098 max=4015.460 ms
+codec.upload_draw_submit count=30 mean=3.712 p95=9.202 max=9.444 ms
+codec.mux_write count=30 mean=0.474 p95=0.997 max=2.085 ms
+state after sharpen_cpu AVC thermal=0 battery_tenths_c=356 process_pss_kb=1430871
+export sharpen_cpu HEVC10 1280x720 frames=30 seconds=16.927587001 fps=1.772254958620372
+codec.input_wait count=31 mean=0.179 p95=0.351 max=1.033 ms
+codec.output_wait count=1599 mean=10.417 p95=11.235 max=19.106 ms
+raw_tools.configure count=30 mean=0.010 p95=0.016 max=0.024 ms
+decode.native count=32 mean=44.275 p95=70.292 max=72.714 ms
+raw_tools.native count=32 mean=0.001 p95=0.002 max=0.005 ms
+decode.shade_copy count=32 mean=58.835 p95=82.910 max=85.373 ms
+decode.raw_tools count=1 mean=68.425 p95=68.425 max=68.425 ms
+grade.as_shot_fit count=1 mean=2230.531 p95=2230.531 max=2230.531 ms
+grade.prepare count=30 mean=6.889 p95=0.225 max=204.409 ms
+rcd.full count=30 mean=45.562 p95=58.670 max=66.481 ms
+grade.gpu_attempt_p010 count=30 mean=0.015 p95=0.022 max=0.024 ms
+grade.cpu_readback count=30 mean=330.564 p95=398.609 max=510.735 ms
+output.cpu_p010 count=30 mean=59.397 p95=69.373 max=114.863 ms
+export.render_p010 count=30 mean=556.942 p95=557.661 max=4132.067 ms
+codec.p010_submit count=30 mean=1.509 p95=2.837 max=7.302 ms
+codec.mux_write count=30 mean=0.737 p95=3.505 max=5.034 ms
+state after sharpen_cpu HEVC10 thermal=0 battery_tenths_c=366 process_pss_kb=1483189
+PASS: project/RAW/video/audio/CinemaDNG integration
+

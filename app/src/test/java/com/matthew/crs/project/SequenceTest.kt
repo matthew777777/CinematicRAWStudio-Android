@@ -1,6 +1,6 @@
 package com.matthew.crs.project
 
-import com.matthew.crs.Receipt
+import com.matthew.crs.rapidraw.*
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
@@ -56,7 +56,7 @@ class SequenceTest {
     }
     @Test fun projectRoundTripPreservesCutsLinksGradesAndAudio() {
         var p = SequenceProject(name = "Saved sequence").append(source()).append(source("b"))
-        p = p.copy(clips = p.clips.mapIndexed { i, c -> c.copy(gain = 0.75f, receipt = Receipt(exposure = i * 20, contrast = 17, rawFixesEnabled = true)) })
+        p = p.copy(clips = p.clips.mapIndexed { i, c -> c.copy(gain = 0.75f, grade = RapidGradeSnapshot(RapidDefaults.schema.defaults().withValue("exposure", i * 0.2).withValue("contrast", 17).encode())) })
         val restored = ProjectStore.decode(ProjectStore.encode(p))
         assertEquals(p, restored)
         assertEquals(SequenceSchedule(p).videoAt(12_000_000), SequenceSchedule(restored).videoAt(12_000_000))
@@ -113,10 +113,10 @@ class SequenceTest {
     }
 
     @Test fun importingAGradedTakeCopiesTheReceiptOntoPicture() {
-        val receipt = Receipt(exposure = 70, contrast = 21, temperature = 5200)
-        val p = SequenceProject().append(source(), receipt = receipt)
-        assertEquals(receipt, p.clips.first { p.track(it.trackId).kind == TrackKind.VIDEO }.receipt)
-        assertEquals(receipt, ProjectStore.decode(ProjectStore.encode(p)).clips.first { p.track(it.trackId).kind == TrackKind.VIDEO }.receipt)
+        val grade = RapidGradeSnapshot(RapidDefaults.schema.defaults().withValue("exposure", 0.7).withValue("contrast", 21).encode())
+        val p = SequenceProject().append(source(), grade = grade)
+        assertEquals(grade, p.clips.first { p.track(it.trackId).kind == TrackKind.VIDEO }.grade)
+        assertEquals(grade, ProjectStore.decode(ProjectStore.encode(p)).clips.first { p.track(it.trackId).kind == TrackKind.VIDEO }.grade)
     }
 
     @Test fun hevcSpsReportsPictureBitDepthRatherThanAssumingTheProfile() {

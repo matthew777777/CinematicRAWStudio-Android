@@ -73,10 +73,23 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
+        // Extend the window into cutout areas in either orientation. Insets are
+        // applied to toolbar controls, rather than shrinking the entire window.
+        if (android.os.Build.VERSION.SDK_INT >= 28) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                    android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                } else {
+                    android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                }
+            }
+        }
         hideSystemBars()
         ExportQueue.load(this)
         setContent {
             StudioTheme {
+                var rapidPreview by rememberSaveable { mutableStateOf(intent.getBooleanExtra("rapidraw_editor_preview", false)) }
+                var rapidSource by rememberSaveable { mutableStateOf(if (intent.getBooleanExtra("rapidraw_editor_preview", false)) intent.data?.toString() else null) }
                 var tab by rememberSaveable { mutableStateOf(Tab.Library) }
                 var open by rememberSaveable { mutableStateOf<String?>(null) }
                 var projectId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -97,13 +110,14 @@ class MainActivity : ComponentActivity() {
                 }
                 val uri = open
                 when {
+                    rapidPreview -> com.matthew.crs.rapidraw.RapidEditorScreen(onBack = { rapidPreview = false; rapidSource = null }, source = rapidSource?.let(Uri::parse))
                     projectId != null -> {
                         BackHandler { projectId = null }
                         com.matthew.crs.project.SequenceScreen(projectId!!, onBack = { projectId = null })
                     }
                     uri != null -> {
                         BackHandler { open = null }
-                        PlayerScreen(Uri.parse(uri), onBack = { open = null })
+                        com.matthew.crs.rapidraw.RapidEditorScreen(onBack = { open = null }, source = Uri.parse(uri))
                     }
                     else -> {
                         if (tab != Tab.Library) BackHandler { tab = Tab.Library }
@@ -111,7 +125,7 @@ class MainActivity : ComponentActivity() {
                         Scaffold(bottomBar = { BottomBar(tab) { tab = it } }, contentWindowInsets = WindowInsets(0)) { pad ->
                             Box(Modifier.padding(bottom = pad.calculateBottomPadding()).consumeWindowInsets(pad).fillMaxSize()) {
                                 when (tab) {
-                                    Tab.Library -> GalleryScreen(onOpen = { open = it.toString() }, onOpenProject = { projectId = it })
+                                    Tab.Library -> GalleryScreen(onOpen = { open = it.toString() }, onOpenProject = { projectId = it }, onNewEditor = { rapidSource = null; rapidPreview = true })
                                     Tab.Projects -> com.matthew.crs.project.ProjectsScreen(onOpen = { projectId = it })
                                     Tab.Exports -> com.matthew.crs.project.ExportsScreen()
                                 }
@@ -119,6 +133,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+                com.matthew.crs.project.CompactOriginalRemovalPrompt()
             }
         }
     }

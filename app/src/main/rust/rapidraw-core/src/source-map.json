@@ -1,0 +1,60 @@
+{
+  "commit": "f1d71a69eef813432db214f77969f567c41ff1d7",
+  "ranges": [
+    {
+      "upstream": "image_processing.rs",
+      "first_line": 170,
+      "last_line": 189,
+      "output": "image_processing.rs"
+    },
+    {
+      "upstream": "image_processing.rs",
+      "first_line": 1659,
+      "last_line": 2266,
+      "output": "image_processing.rs"
+    },
+    {
+      "upstream": "image_processing.rs",
+      "first_line": 2282,
+      "last_line": 2288,
+      "output": "image_processing.rs"
+    },
+    {
+      "upstream": "image_processing.rs",
+      "first_line": 2504,
+      "last_line": 3113,
+      "output": "image_processing.rs"
+    },
+    {
+      "upstream": "white_balance.rs",
+      "first_line": 1,
+      "last_line": 289,
+      "output": "white_balance.rs"
+    },
+    {
+      "upstream": "baseline_exposure.rs",
+      "first_line": 28,
+      "last_line": 55,
+      "output": "baseline_exposure.rs"
+    },
+    {
+      "upstream": "as_shot.rs",
+      "first_line": 9,
+      "last_line": 23,
+      "output": "as_shot.rs"
+    },
+    {
+      "upstream": "negative_conversion.rs",
+      "first_line": 43,
+      "last_line": 50,
+      "output": "negative_conversion.rs"
+    },
+    {
+      "upstream": "mask_generation.rs",
+      "first_line": 23,
+      "last_line": 65,
+      "output": "mask_generation.rs"
+    }
+  ],
+  "adapters": "Metadata is supplied by the caller. No decoder, file-service or UI code in core."
+}

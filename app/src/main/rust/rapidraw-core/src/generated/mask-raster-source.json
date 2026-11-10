@@ -1,0 +1,19 @@
+{
+  "commit": "f1d71a69eef813432db214f77969f567c41ff1d7",
+  "sha256": "b333e1adeb5f92ebdb694b46e9c50c77de951ef177492053bdc33ca91cf24217",
+  "ranges": [
+    [
+      98,
+      780
+    ],
+    [
+      1251,
+      1264
+    ],
+    [
+      1342,
+      1398
+    ]
+  ],
+  "adapter": "Geometric/brush dispatch only; no AI methods"
+}

@@ -1,0 +1,137 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Generated: exact RawLens coherent-green reconstruction; camera-linear output adapter.
+#version 450
+layout(local_size_x=16,local_size_y=16) in;
+layout(binding=0) readonly buffer Bayer { uint codes[]; };
+layout(binding=1,rgba16f) uniform writeonly image2D cameraRgb;
+struct FusedParams {
+    ivec2 cDims;      // crop W/H (MHC domain, full res)
+    ivec2 cOrigin;    // crop left/top in sensor pixels (CFA phase)
+    ivec4 cChans;     // quad-offset map, channels[] convention
+    vec4 cNormBias;   // per-quad-pos -black * invRange (FMA bias)
+    vec4 cInvRange;   // per-quad-pos 1/(white-black)
+    int cPitch;       // sensor row stride in pixels
+    int _pad0;
+    ivec2 oDims;      // output W/H (encode res)
+    vec4 gGains;      // R, G, B white-balance gains (+1 spare, folded: unused)
+    vec4 gCcmR;
+    vec4 gCcmG;
+    vec4 gCcmB;
+    vec4 gMisc;       // exposureEV, yStrideW, uvStrideW, uvBaseOffB
+    ivec4 sDims;      // shade rows, cols, enable, outMode
+    vec4 sActive;     // shade active l, t, 1/w, 1/h (sensor pixels)
+};
+layout(binding = 2) readonly buffer Fused { FusedParams u; };
+// Green edge-gate band, mirrors MhcReference.GREEN_EDGE_T0/T1.
+const float GREEN_EDGE_T0 = 0.03;
+const float GREEN_EDGE_T1 = 0.08;
+// Chroma side floor + level-ratio regularizer, mirrors
+// MhcReference.BILATERAL_EPS/LEVEL_EPS.
+const float BILATERAL_EPS = 1e-3;
+const float LEVEL_EPS = 0.002;
+// Sensor-white desaturation band, mirrors MhcReference.DESAT_LO/HI
+// (same anchors as the AMaZE JPEG path).
+const float DESAT_LO = 0.70;
+const float DESAT_HI = 0.99;
+// Demosaiced output ceiling, mirrors MhcReference.OUTPUT_CLAMP_HI
+// (see vf_mhc.comp).
+const float OUTPUT_CLAMP_HI = 4.0;
+
+// Phase-preserving edge mirror (single reflection covers our +-2
+// stencil on any dims >= 8).
+int mir(int i, int n) {
+    if (i < 0) i = -i;
+    if (i >= n) i = 2 * n - 2 - i;
+    return i;
+}
+
+// Quad offset (0..3) of crop pixel s in sensor phase.
+int quadOf(ivec2 s) {
+    return (((s.y + u.cOrigin.y) & 1) << 1) | ((s.x + u.cOrigin.x) & 1);
+}
+
+// CFA color 0=R 1=G 2=B by inverting channels[] (canonical 1 AND 2 are
+// both green: Gr and Gb share a quad diagonal).
+int colorAt(ivec2 s) {
+    int q = quadOf(s);
+    if (u.cChans.x == q) return 0;
+    if (u.cChans.y == q || u.cChans.z == q) return 1;
+    return 2;
+}
+
+// Unpack + normalize one sensor pixel from a precomputed plane index
+// with precomputed quad phase. Single FMA, unclipped (kernel outputs
+// are unclipped anyway; the grade packs clamped codes downstream).
+float normIdx(int idx, int q) {
+    uint uu = uint(idx);
+    uint word = codes[uu >> 1u];
+    uint code = ((uu & 1u) == 0u) ? (word & 0xFFFFu) : (word >> 16u);
+    return clamp(fma(float(code), u.cInvRange[q], u.cNormBias[q]),0.0,1.0);
+}
+
+// Unpack + normalize from an already-loaded word (the caller
+// guarantees word == codes[idx >> 1]) with a precomputed shift.
+float normShift(uint word, uint shift, int q) {
+    uint code = (word >> shift) & 0xFFFFu;
+    return clamp(fma(float(code), u.cInvRange[q], u.cNormBias[q]),0.0,1.0);
+}
+
+// Edge path: mirror into range first (phase preserving), then unpack.
+float normEdge(ivec2 s) {
+    ivec2 m = ivec2(mir(s.x, u.cDims.x), mir(s.y, u.cDims.y));
+    int q = quadOf(m);
+    int idx = (m.y + u.cOrigin.y) * u.cPitch + (m.x + u.cOrigin.x);
+    return normIdx(idx, q);
+}
+
+// Green is reconstructed once in a preceding compact pass. Chroma uses
+// green at each actual chroma sample, avoiding the old raw-side level ratios.
+layout(binding = 5) readonly buffer CoherentGreen { uint greenWords[]; };
+float greenAt(ivec2 s) {
+    ivec2 m = ivec2(mir(s.x,u.cDims.x),mir(s.y,u.cDims.y));
+    uint word = greenWords[m.y * ((u.cDims.x + 1) / 2) + m.x / 2];
+    vec2 pair = unpackHalf2x16(word);
+    return ((m.x & 1) == 0) ? pair.x : pair.y;
+}
+vec3 mhcRgb(ivec2 s) {
+    float c=normEdge(s);
+    int col=colorAt(s);
+    float g=(col==1) ? c : greenAt(s);
+    float r; float b;
+    if (col==1) {
+        float n=normEdge(s+ivec2(0,-1)); float so=normEdge(s+ivec2(0,1));
+        float w=normEdge(s+ivec2(-1,0)); float e=normEdge(s+ivec2(1,0));
+        float w2=normEdge(s+ivec2(-2,0)); float e2=normEdge(s+ivec2(2,0));
+        float n2=normEdge(s+ivec2(0,-2)); float s2=normEdge(s+ivec2(0,2));
+        float gw=greenAt(s+ivec2(-1,0)); float ge=greenAt(s+ivec2(1,0));
+        float gn=greenAt(s+ivec2(0,-1)); float gs=greenAt(s+ivec2(0,1));
+        float ww=0.001+abs(g-ge)+abs(c-e2);
+        float we=0.001+abs(g-gw)+abs(c-w2);
+        float wn=0.001+abs(g-gs)+abs(c-s2);
+        float ws=0.001+abs(g-gn)+abs(c-n2);
+        float ew=g+(ww*(w-gw)+we*(e-ge))/(ww+we);
+        float ns=g+(wn*(n-gn)+ws*(so-gs))/(wn+ws);
+        bool redEW=colorAt(s+ivec2(1,0))==0;
+        r=redEW ? ew : ns; b=redEW ? ns : ew;
+    } else {
+        float nw=normEdge(s+ivec2(-1,-1)); float ne=normEdge(s+ivec2(1,-1));
+        float sw=normEdge(s+ivec2(-1,1)); float se=normEdge(s+ivec2(1,1));
+        float gnw=greenAt(s+ivec2(-1,-1)); float gne=greenAt(s+ivec2(1,-1));
+        float gsw=greenAt(s+ivec2(-1,1)); float gse=greenAt(s+ivec2(1,1));
+        float wnw=1.0/(0.001+abs(g-gnw)+abs(nw-se));
+        float wse=1.0/(0.001+abs(g-gse)+abs(nw-se));
+        float wne=1.0/(0.001+abs(g-gne)+abs(ne-sw));
+        float wsw=1.0/(0.001+abs(g-gsw)+abs(ne-sw));
+        float opposite=g+(wnw*(nw-gnw)+wne*(ne-gne)+wsw*(sw-gsw)+wse*(se-gse))/(wnw+wne+wsw+wse);
+        r=(col==0) ? c : opposite;
+        b=(col==2) ? c : opposite;
+    }
+    return clamp(vec3(r,g,b),vec3(0.0),vec3(OUTPUT_CLAMP_HI));
+}
+
+
+void main() {
+    ivec2 s=ivec2(gl_GlobalInvocationID.xy);
+    if(any(greaterThanEqual(s,u.cDims))) return;
+    imageStore(cameraRgb,s,vec4(mhcRgb(s),1.0));
+}

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.matthew.crs.project
 
+import com.matthew.crs.rapidraw.*
+
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -67,7 +69,7 @@ private fun SequenceEditor(s: ProjectSession, onBack: () -> Unit) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event -> if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) s.player.pause() }
         lifecycle.addObserver(observer); onDispose { lifecycle.removeObserver(observer) }
     }
-    LaunchedEffect(ExportQueue.running) { if (ExportQueue.running) s.player.pause() }
+    LaunchedEffect(ExportQueue.running) { if (ExportQueue.running) s.player.releaseForExport() else s.player.seek(s.player.index) }
     val p = s.project
     val selected = s.selected
     var inspect by rememberSaveable { mutableStateOf(true) }
@@ -88,8 +90,8 @@ private fun SequenceEditor(s: ProjectSession, onBack: () -> Unit) {
                         if (audio) ProjectMedia.importAudio(context, uri) else ProjectMedia.importRaw(context, uri)
                     }
                 }
-                val receipts = withContext(Dispatchers.IO) { assets.associate { it.id to (ReceiptStore.load(context, it.uri) ?: Receipt()) } }
-                s.edit { original -> assets.fold(original) { project, asset -> project.append(asset, if (audio) audioTarget else null, receipt = receipts.getValue(asset.id)) } }
+                val grades = withContext(Dispatchers.IO) { assets.associate { it.id to RapidGradeSnapshot((RapidGradeStore.load(context, it.uri, RapidDefaults.schema) ?: RapidDefaults.schema.defaults()).encode()) } }
+                s.edit { original -> assets.fold(original) { project, asset -> project.append(asset, if (audio) audioTarget else null, grade = grades.getValue(asset.id)) } }
                 s.selectedId = s.project.clips.lastOrNull { if (audio) it.trackId == audioTarget else s.project.track(it.trackId).kind == TrackKind.VIDEO }?.id
                 inspect = true
             } catch (cancelled: CancellationException) { throw cancelled }
@@ -132,7 +134,7 @@ private fun SequenceEditor(s: ProjectSession, onBack: () -> Unit) {
             }
         }
     }) { pad ->
-        BoxWithConstraints(Modifier.padding(pad).fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))) {
+        BoxWithConstraints(Modifier.padding(pad).fillMaxSize()) {
             val availableHeight = maxHeight
             val availableWidth = maxWidth
             var timelineDp by remember(landscape) { mutableFloatStateOf(if (landscape) 160f else 220f) }
@@ -250,12 +252,12 @@ private fun ClipInspector(s: ProjectSession, relink: (SourceAsset) -> Unit, modi
     val p = s.project; val asset = p.asset(c.assetId); val audio = p.track(c.trackId).kind == TrackKind.AUDIO
     var grade by s::inspectorGrade
     var resetGrade by remember(c.id) { mutableStateOf(false) }
-    var toolName by rememberSaveable { mutableStateOf(EditTool.Light.name) }
+    var toolName by rememberSaveable { mutableStateOf(RapidSection.Basic.name) }
     Column(modifier.background(MaterialTheme.colorScheme.surface)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = { grade = false }, modifier = Modifier.weight(1f)) { Text(if (audio) "Audio clip" else "Clip", color = if (!grade) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
-            if (!audio) TextButton(onClick = { grade = true }, enabled = !asset.rgb, modifier = Modifier.weight(1f)) { Text("Grade", color = if (grade) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
-            if (grade && !audio && !asset.rgb) IconButton(onClick = { resetGrade = true }, enabled = !ExportQueue.running) {
+            if (!audio) TextButton(onClick = { grade = true }, modifier = Modifier.weight(1f)) { Text("Grade", color = if (grade) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
+            if (grade && !audio) IconButton(onClick = { resetGrade = true }, enabled = !ExportQueue.running) {
                 Icon(Icons.Default.RestartAlt, "Reset all of this clip's grade")
             }
             if (onExpand != null) IconButton(onClick = { onExpand(!expanded) }) {
@@ -263,11 +265,19 @@ private fun ClipInspector(s: ProjectSession, relink: (SourceAsset) -> Unit, modi
                     if (expanded) "Show the timeline again" else "Enlarge the inspector")
             }
         }
-        if (grade && !audio && !asset.rgb) {
-            val tool = EditTool.valueOf(toolName)
-            ToolStrip(tool, { toolName = it.name }, compact = false)
-            EditorPanel(c.receipt, s.player.asShotKelvin, { receipt -> s.edit { project -> project.copy(clips = project.clips.map { if (it.id == c.id) it.copy(receipt = receipt) else it }) } },
-                modifier = Modifier.weight(1f).fillMaxWidth(), tool = tool)
+        if (grade && !audio) {
+            if (c.legacyGrade != null) Text("This clip has a legacy grade. Reset it to begin grading with RapidRAW.", color = MaterialTheme.colorScheme.error)
+            else {
+                val section = RapidSection.entries.firstOrNull { it.name == toolName } ?: RapidSection.Basic
+                Row(Modifier.horizontalScroll(rememberScrollState())) { RapidSection.entries.forEach { item ->
+                    FilterChip(selected = item == section, onClick = { toolName = item.name }, label = { Text(item.title) })
+                } }
+                Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(12.dp)) {
+                    RapidPanel(section, RapidDefaults.schema, c.grade.grade(), asset.width, asset.height) { grade ->
+                        s.edit { project -> project.copy(clips = project.clips.map { if (it.id == c.id) it.copy(grade = RapidGradeSnapshot(grade.encode())) else it }) }
+                    }
+                }
+            }
         } else Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
             Text(asset.name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text("${p.track(c.trackId).name} · ${if (c.linkId == null) "Unlinked" else "Linked camera audio"}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -297,13 +307,12 @@ private fun ClipInspector(s: ProjectSession, relink: (SourceAsset) -> Unit, modi
             }
             TextButton(onClick = { relink(asset) }, enabled = !s.importing && !ExportQueue.running) { Text("Relink source") }
             TextButton(onClick = { s.edit { it.remove(c.id) } }, enabled = !ExportQueue.running) { Text("Remove linked clip", color = MaterialTheme.colorScheme.error) }
-            if (!audio && asset.rgb) Text("This binned RGB take uses its recorded color; RAW grading is unavailable.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(16.dp))
         }
     }
     if (resetGrade) AlertDialog(onDismissRequest = { resetGrade = false }, title = { Text("Reset clip adjustments?") },
         text = { Text("Restore this clip’s original settings. You can undo this change.") },
-        confirmButton = { TextButton(onClick = { s.edit { project -> project.copy(clips = project.clips.map { if (it.id == c.id) it.copy(receipt = Receipt()) else it }) }; resetGrade = false }) { Text("Reset") } },
+        confirmButton = { TextButton(onClick = { s.edit { project -> project.copy(clips = project.clips.map { if (it.id == c.id) it.copy(grade = RapidGradeSnapshot(), legacyGrade = null) else it }) }; resetGrade = false }) { Text("Reset") } },
         dismissButton = { TextButton(onClick = { resetGrade = false }) { Text("Cancel") } })
 
 }

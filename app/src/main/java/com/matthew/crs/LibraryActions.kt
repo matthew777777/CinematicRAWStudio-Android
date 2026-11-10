@@ -18,17 +18,18 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.matthew.crs.project.*
+import com.matthew.crs.rapidraw.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** A one-take project at the take's own size and rate, graded with [receipt] (Library and editor export). */
-fun singleTakeProject(context: Context, uri: Uri, receipt: Receipt): SequenceProject {
+/** A one-take project at the take's own size and rate, graded with [grade] (Library and editor export). */
+fun singleTakeProject(context: Context, uri: Uri, grade: RapidGradeSnapshot): SequenceProject {
     val asset = ProjectMedia.importRaw(context, uri)
     val project = SequenceProject(name = asset.name.removeSuffix(".craw"), rate = FrameRate.fromFps(asset.fps),
         width = asset.width and 1.inv(), height = asset.height and 1.inv()).append(asset)
     return project.copy(clips = project.clips.map { c ->
-        if (project.track(c.trackId).kind == TrackKind.VIDEO) c.copy(receipt = receipt) else c
+        if (project.track(c.trackId).kind == TrackKind.VIDEO) c.copy(grade = grade) else c
     }).validated()
 }
 
@@ -59,17 +60,6 @@ fun SortFilterSheet(sort: TakeSort, filter: TakeFilter, onSort: (TakeSort) -> Un
 @Composable
 fun TakeInfoSheet(take: Take, info: ClipInfo?, onDismiss: () -> Unit) {
     val context = LocalContext.current
-    // As-shot white balance as the editor shows it: MLV-App's kelvin/tint for the take's AsShotNeutral.
-    val asShot by produceState<Pair<Double, Double>?>(null, take.uri) {
-        value = withContext(Dispatchers.IO) {
-            runCatching {
-                CrawClip.open(context, take.uri)?.use { clip ->
-                    if (clip.info.rgb || clip.info.neutral.size != 3) null
-                    else MlvGrade(clip).use { g -> g.findAsShot(clip.info.neutral.map { it.toFloat() }.toFloatArray()) }
-                }
-            }.getOrNull()
-        }
-    }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surface) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp).verticalScroll(rememberScrollState())) {
             Text(take.name.removeSuffix(".craw"), style = MaterialTheme.typography.titleMedium)
@@ -88,7 +78,7 @@ fun TakeInfoSheet(take: Take, info: ClipInfo?, onDismiss: () -> Unit) {
             Row2("Camera", camera.ifEmpty { info.camera })
             if (info.iso > 0) Row2("ISO", "${info.iso}")
             if (info.exposureSeconds > 0) Row2("Shutter", shutter(info.exposureSeconds))
-            asShot?.let { (k, t) -> Row2("White balance", "%.0f K · tint %+.1f (as shot)".format(k, t)) }
+            if (info.neutral.size == 3) Row2("As-shot neutral", info.neutral.joinToString { "%.4f".format(it) })
             Group("AUDIO")
             Row2("Audio", if (info.hasAudio) "${info.audioRate / 1000.0} kHz · ${info.audioBits}-bit · ${if (info.audioChannels == 1) "mono" else "${info.audioChannels} ch"}" else "None")
             Group("FILE")
@@ -119,7 +109,7 @@ private fun Row2(label: String, value: String) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TakeActionsSheet(take: Take, onDismiss: () -> Unit, onEdit: () -> Unit, onInfo: () -> Unit, onExport: () -> Unit,
-    onExportDng: () -> Unit, onAddToProject: () -> Unit, onDelete: () -> Unit, onPaste: (() -> Unit)? = null) {
+    onExportDng: () -> Unit, onCompact: () -> Unit, onAddToProject: () -> Unit, onDelete: () -> Unit, onPaste: (() -> Unit)? = null) {
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surface) {
         Column(Modifier.padding(bottom = 24.dp)) {
             Text(take.name.removeSuffix(".craw"), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
@@ -128,6 +118,7 @@ fun TakeActionsSheet(take: Take, onDismiss: () -> Unit, onEdit: () -> Unit, onIn
             Action(Icons.Default.VideoLibrary, "Add to project", onAddToProject)
             Action(Icons.Default.FileUpload, "Export video", onExport)
             Action(Icons.Default.Folder, "Export CinemaDNG", onExportDng)
+            Action(Icons.Default.Archive, "Convert to CRAW Compact", onCompact)
             Action(Icons.Default.Info, "Info", onInfo)
             HorizontalDivider(Modifier.padding(vertical = 6.dp))
             Action(Icons.Default.DeleteOutline, "Delete take", onDelete, danger = true)
@@ -158,10 +149,10 @@ fun AddToProjectDialog(take: Take, onDismiss: () -> Unit, onAdded: (String) -> U
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    val receipt = ReceiptStore.load(context, take.uri.toString()) ?: Receipt()
+                    val grade = RapidGradeSnapshot((RapidGradeStore.load(context, take.uri.toString(), RapidDefaults.schema) ?: RapidDefaults.schema.defaults()).encode())
                     val asset = ProjectMedia.importRaw(context, take.uri)
                     val project = (target ?: SequenceProject(name = take.name.removeSuffix(".craw"), rate = FrameRate.fromFps(asset.fps)))
-                        .append(asset, receipt = receipt)
+                        .append(asset, grade = grade)
                     ProjectStore.save(context, project)
                     project.id
                 }

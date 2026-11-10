@@ -42,7 +42,7 @@ fun ProjectsScreen(onOpen: (String) -> Unit, onBack: (() -> Unit)? = null) {
     }, actions = { FilledTonalButton(onClick = { create = true }, modifier = Modifier.padding(end = 16.dp)) {
         Icon(Icons.Default.Add, null, Modifier.size(18.dp)); Text("New project")
     } }) }) { pad ->
-        Box(Modifier.padding(pad).fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))) {
+        Box(Modifier.padding(pad).fillMaxSize()) {
             val list = projects
             if (list == null) CircularProgressIndicator(Modifier.align(Alignment.Center))
             else if (list.isEmpty()) Column(Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {

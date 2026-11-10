@@ -1,0 +1,125 @@
+{
+  "backend": "Apple M1 / Metal",
+  "scope": "Same machine, before versus after GPU frame assembly; synthetic source only",
+  "cases": [
+    {
+      "case": "aces2",
+      "bytes": 8192,
+      "equal_length": true,
+      "differing_bytes": 0,
+      "sha256": "9c0f36e5e9bc8fe2b6bd6c227cf5f64cacdd07039fe0cc0052aeb416f0985c48"
+    },
+    {
+      "case": "agx",
+      "bytes": 8192,
+      "equal_length": true,
+      "differing_bytes": 0,
+      "sha256": "561e87a87559758ecec68a166adabc84a70cd7438042e3e7ba8f0b3dd272bc87"
+    },
+    {
+      "case": "creative",
+      "bytes": 8192,
+      "equal_length": true,
+      "differing_bytes": 0,
+      "sha256": "e0b8c372f475e4d4077efd26a0841ead5dab21000cb5734b535420f8b70892b0"
+    },
+    {
+      "case": "curves",
+      "bytes": 8192,
+      "equal_length": true,
+      "differing_bytes": 0,
+      "sha256": "a45174d712a8aa2cb402413b107eb5b15e16bbd05acb195c3d2127d3cec465bb"
+    },
+    {
+      "case": "default",
+      "bytes": 8192,
+      "equal_length": true,
+      "differing_bytes": 0,
+      "sha256": "8b42fda031fee976ee3a524bf3a89c7f3d48e0c6eee85ec4d1f3cb9f13392c6e"
+    },
+    {
+      "case": "detail",
+      "bytes": 8192,
+      "equal_length": true,
+      "differing_bytes": 0,
+      "sha256": "ef124b40967d4c12338aefd5ab266b0c6eb67f1dcc2cd2131047db8c60f0d246"
+    },
+    {
+      "case": "exposure",
+      "bytes": 8192,
+      "equal_length": true,
+      "differing_bytes": 0,
+      "sha256": "022bdc127c56a637ee10363915f73606330e7c62592763883b7da9cc44c97408"
+    },
+    {
+      "case": "filament",
+      "bytes": 8192,
+      "equal_length": true,
+      "differing_bytes": 0,
+      "sha256": "6ec6f3b194b44fe801cf5958a5f887ed291adfae5b73e39e2df47bd246e1437f"
+    },
+    {
+      "case": "grain",
+      "bytes": 8192,
+      "equal_length": true,
+      "differing_bytes": 0,
+      "sha256": "22958dcc5fb293beccbc6fe5b7acacc781e77fd62fc1b6b92130a6e231a89ca0"
+    },
+    {
+      "case": "lut",
+      "bytes": 8192,
+      "equal_length": true,
+      "differing_bytes": 0,
+      "sha256": "2460bd5e2220e36be888de3c05bf6f324ca861568269cf747e3667e1d9d536f9"
+    },
+    {
+      "case": "mask-brush",
+      "bytes": 8192,
+      "equal_length": true,
+      "differing_bytes": 0,
+      "sha256": "cce645a87f28101c84963547ed092f71a480473a4c81dffbe91183c59f98d06e"
+    },
+    {
+      "case": "mask-radial",
+      "bytes": 8192,
+      "equal_length": true,
+      "differing_bytes": 0,
+      "sha256": "30f1a6222fc9b17c42421ac8c808d276991b6d98a00d0a0f1ef8cd05ca091cd4"
+    },
+    {
+      "case": "mixer",
+      "bytes": 8192,
+      "equal_length": true,
+      "differing_bytes": 0,
+      "sha256": "2b5eb190fc419cc584cacf3d7745f04a74d96f0d30496b0a4a77bd201fedff76"
+    },
+    {
+      "case": "monochrome",
+      "bytes": 8192,
+      "equal_length": true,
+      "differing_bytes": 0,
+      "sha256": "0252493e4291f3115c222202021af05334bccdcd67a0d03dcbfc0dd5e5a7d40a"
+    },
+    {
+      "case": "noise",
+      "bytes": 8192,
+      "equal_length": true,
+      "differing_bytes": 0,
+      "sha256": "e447b26017516ee01d52530ab7f451183b4774766c83e9005c2942c48671b2eb"
+    },
+    {
+      "case": "tonal",
+      "bytes": 8192,
+      "equal_length": true,
+      "differing_bytes": 0,
+      "sha256": "c87b54dfb5cc058927918e1b91068dd4dc14299ae61cfb7b4db19be5f7127c17"
+    },
+    {
+      "case": "wheels",
+      "bytes": 8192,
+      "equal_length": true,
+      "differing_bytes": 0,
+      "sha256": "18b374b9d24e9e9f450315e2b674644079e796c611a86207899ca589a7df24e0"
+    }
+  ]
+}

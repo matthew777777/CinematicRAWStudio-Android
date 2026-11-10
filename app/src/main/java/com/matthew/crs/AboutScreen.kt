@@ -22,16 +22,13 @@ import androidx.compose.ui.window.DialogProperties
 private data class Component(val name: String, val use: String, val license: String, val file: String)
 
 private val COMPONENTS = listOf(
+    Component("RapidRAW", "Vulkan grading engine · github.com/CyberTimon/RapidRAW", "AGPL-3.0", "rapidraw-AGPL-3.0.txt"),
     Component("Cinematic RAW Studio", "This app", "GPL-3.0-or-later", "GPL-3.0.txt"),
-    Component("MLV-App", "Image processing and RAW corrections (github.com/ilia3101/MLV-App)", "GPL-3.0", "GPL-3.0.txt"),
-    Component("RawLens", "Vulkan demosaic (Packed RCD) and preview pipeline", "GPL-3.0", "GPL-3.0.txt"),
-    Component("CinematicRAWStudio CRAW encoder, decoder, develop", ".CRAW reading and decoding", "Apache-2.0", "Apache-2.0.txt"),
+    Component("RawLens", "Vulkan demosaic (coherent MHC) and preview pipeline", "GPL-3.0", "GPL-3.0.txt"),
+    Component("CinematicRAWStudio CRAW encoder and decoder", ".CRAW reading and decoding", "Apache-2.0", "Apache-2.0.txt"),
     Component("CRAW notices", "Required notices of the CRAW libraries", "Apache-2.0 NOTICE", "CRAW-NOTICE.txt"),
-    Component("Sobel filter (Pedro Melgueira)", "Part of MLV-App's processing", "Apache-2.0", "Apache-2.0.txt"),
-    Component("RBFilter (Ming)", "Recursive bilateral filter in MLV-App", "MIT", "MIT-RBFilter.txt"),
-    Component("TinyExpr (Lewis Van Winkle)", "Expression parser in MLV-App", "zlib", "zlib-tinyexpr.txt"),
-    Component("GENANN (Lewis Van Winkle)", "Neural network in MLV-App's film filters", "zlib", "zlib-genann.txt"),
-    Component("BakingLab ACES fit", "Display transform in RawLens code", "MIT", "bakinglab-aces.txt"),
+    Component("OpenColorIO ACES 2.0", "Reference SDR 100-nit Rec.709 / sRGB output transform", "BSD-3-Clause", "ocio-aces2.txt"),
+    Component("Google Filament AgX", "AgX Base display transform", "Apache-2.0", "Apache-2.0.txt"),
 )
 
 /** About, source and the licences of everything bundled. */
@@ -46,8 +43,8 @@ fun AboutSheet(onDismiss: () -> Unit) {
             Column(Modifier.padding(horizontal = 20.dp)) {
                 Text("Cinematic RAW Studio", style = MaterialTheme.typography.titleLarge)
                 Text("Version $version", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("Free software under the GNU General Public License, version 3 or later. It comes with no warranty. " +
-                    "You may redistribute and modify it under that licence; the complete source code is published with every release.",
+                Text("Free software including the AGPL-3.0 RapidRAW engine and GPL-3.0-or-later app components. It comes with no warranty. " +
+                    "The component licences and corresponding source must accompany redistribution.",
                     fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp))
                 Text("LICENCES", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(top = 20.dp, bottom = 4.dp))

@@ -17,7 +17,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.documentfile.provider.DocumentFile
 import com.matthew.crs.CrawClip
-import com.matthew.crs.ReceiptStore
+import com.matthew.crs.rapidraw.RapidGradeStore
+import com.matthew.crs.rapidraw.RapidDefaults
 import kotlinx.coroutines.*
 import org.json.JSONObject
 
@@ -46,11 +47,11 @@ object OriginalDngExporter {
                     context.contentResolver.openOutputStream(file.uri, "w")?.use { output -> wav.inputStream().use { it.copyTo(output) } }
                         ?: error("Cannot write original audio")
                 }
-                val receipt = ReceiptStore.load(context, source.uri)
+                val receipt = RapidGradeStore.load(context, source.uri, RapidDefaults.schema)
                 val manifest = JSONObject().put("format", "Original CinemaDNG").put("sourceName", source.name)
                     .put("frames", clip.info.frames).put("fps", clip.info.fps).put("imageProcessingApplied", false)
                     .put("note", "Original source samples and capture calibration. Editing adjustments are not baked into these DNG files.")
-                receipt?.let { manifest.put("editorReceipt", JSONObject(it.toJson())) }
+                receipt?.let { manifest.put("rapidrawGrade", JSONObject(it.encode())) }
                 val sidecar = folder.createFile("application/json", "conversion.json") ?: error("Cannot create conversion manifest")
                 context.contentResolver.openOutputStream(sidecar.uri, "w")?.use { it.write(manifest.toString(2).toByteArray()) }
                     ?: error("Cannot write conversion manifest")

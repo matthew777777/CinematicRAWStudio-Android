@@ -1,0 +1,11 @@
+{
+  "repository": "/Users/monikamalinowska/AndroidStudioProjects/RawLens",
+  "head": "93a5fc3dd8f985f18f756257d5fb4acda9333678",
+  "files": {
+    "app/src/main/assets/shaders/vf/vf_mhc_green.comp": "8a46c64b033b1396ce6ea2d02dc377b8dbda772c1fab98574b6e454528f2cdfc",
+    "app/src/main/assets/shaders/vf/vf_mhcyuv.comp": "e87753fb7162b86c0bbec23e05484a9b698880685d1e24eaea5e3b7a8ea431ff",
+    "app/src/main/java/com/matthew/rawlens/MhcReference.kt": "79b026d86866e46b05ffa4307a7180e52f1307d420955b21ad8fdd82d3830a6a",
+    "app/src/main/java/com/matthew/rawlens/VfMhc.kt": "e9732b1ab0fad3a00a9598e647125b4334a6f4cac2a9e8c0fb209c40484253d0"
+  },
+  "note": "Hashes pin actual working-tree files, including user improvements."
+}

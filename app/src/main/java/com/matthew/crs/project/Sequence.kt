@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.matthew.crs.project
 
-import com.matthew.crs.Receipt
+import com.matthew.crs.rapidraw.RapidGradeSnapshot
 import java.util.UUID
 import kotlin.math.roundToLong
 
@@ -43,11 +43,11 @@ data class SequenceTrack(
 data class SequenceClip(
     val id: String = newId(), val assetId: String, val trackId: String,
     val startUs: Long, val inUs: Long = 0, val durationUs: Long,
-    val linkId: String? = null, val gain: Float = 1f, val receipt: Receipt = Receipt(),
+    val linkId: String? = null, val gain: Float = 1f, val grade: RapidGradeSnapshot = RapidGradeSnapshot(), val legacyGrade: String? = null,
 ) { val endUs: Long get() = startUs + durationUs }
 
 data class SequenceProject(
-    val id: String = newId(), val name: String = "Untitled sequence", val version: Int = 1,
+    val id: String = newId(), val name: String = "Untitled sequence", val version: Int = 2,
     val rate: FrameRate = FrameRate(), val width: Int = 1280, val height: Int = 720,
     val assets: List<SourceAsset> = emptyList(),
     val tracks: List<SequenceTrack> = listOf(SequenceTrack(name = "V1", kind = TrackKind.VIDEO),
@@ -65,7 +65,7 @@ data class SequenceProject(
         clips.filter { it.id == id || (selected.linkId != null && it.linkId == selected.linkId) }
     }
     fun validated(): SequenceProject {
-        require(version == 1) { "Unsupported project version $version" }
+        require(version == 2) { "Unsupported project version $version" }
         require(name.isNotBlank() && width in 16..4096 && height in 16..4096 && width % 2 == 0 && height % 2 == 0)
         require(assets.map { it.id }.distinct().size == assets.size)
         require(tracks.map { it.id }.distinct().size == tracks.size)
@@ -89,14 +89,14 @@ data class SequenceProject(
         }
         return this
     }
-    fun append(asset: SourceAsset, audioTrack: String? = null, atUs: Long? = null, receipt: Receipt = Receipt()): SequenceProject {
+    fun append(asset: SourceAsset, audioTrack: String? = null, atUs: Long? = null, grade: RapidGradeSnapshot = RapidGradeSnapshot()): SequenceProject {
         val allAssets = if (assets.any { it.id == asset.id }) assets else assets + asset
         val target = audioTrack?.let(::track) ?: tracks.first { it.kind == TrackKind.VIDEO }
         val start = atUs ?: clips.filter { it.trackId == target.id }.maxOfOrNull { it.endUs } ?: 0
         val duration = rate.time(rate.frame(asset.durationUs)).coerceAtLeast(1).coerceAtMost(asset.durationUs)
         val group = newId()
         val added = mutableListOf(SequenceClip(assetId = asset.id, trackId = target.id,
-            startUs = start, durationUs = duration, receipt = if (target.kind == TrackKind.VIDEO) receipt else Receipt(), linkId = if (target.kind == TrackKind.VIDEO && asset.hasAudio) group else null))
+            startUs = start, durationUs = duration, grade = if (target.kind == TrackKind.VIDEO) grade else RapidGradeSnapshot(), linkId = if (target.kind == TrackKind.VIDEO && asset.hasAudio) group else null))
         if (target.kind == TrackKind.VIDEO && asset.hasAudio) {
             val camera = tracks.first { it.kind == TrackKind.AUDIO }
             added += SequenceClip(assetId = asset.id, trackId = camera.id, startUs = start, durationUs = duration, linkId = group)

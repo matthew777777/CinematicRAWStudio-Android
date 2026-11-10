@@ -1,0 +1,526 @@
+{
+  "engine": "rapidraw",
+  "version": 1,
+  "sourceCommit": "f1d71a69eef813432db214f77969f567c41ff1d7",
+  "sections": {
+    "basic": [
+      "brightness",
+      "contrast",
+      "highlights",
+      "shadows",
+      "whites",
+      "blacks",
+      "exposure",
+      "toneMapper"
+    ],
+    "curves": [
+      "curves",
+      "pointCurves",
+      "parametricCurve",
+      "curveMode"
+    ],
+    "color": [
+      "saturation",
+      "temperature",
+      "tint",
+      "whiteBalance",
+      "vibrance",
+      "hsl",
+      "colorGrading",
+      "colorCalibration",
+      "hue",
+      "monochromeEnabled",
+      "monochromeFilm",
+      "monochromeFilterHue",
+      "monochromeFilterStrength",
+      "monochromeMix",
+      "monochromeToning"
+    ],
+    "details": [
+      "clarity",
+      "dehaze",
+      "structure",
+      "centré",
+      "centréX",
+      "centréY",
+      "sharpness",
+      "sharpnessThreshold",
+      "lumaNoiseReduction",
+      "colorNoiseReduction",
+      "aiDenoiseEnabled",
+      "aiDenoiseMethod",
+      "aiDenoiseAmount",
+      "aiDenoiseDetail",
+      "chromaticAberrationRedCyan",
+      "chromaticAberrationBlueYellow",
+      "negativeConversionEnabled",
+      "negativeRedWeight",
+      "negativeGreenWeight",
+      "negativeBlueWeight",
+      "negativeExposure",
+      "negativeContrast"
+    ],
+    "effects": [
+      "glowAmount",
+      "halationAmount",
+      "flareAmount",
+      "grainAmount",
+      "grainRoughness",
+      "grainSize",
+      "lutIntensity",
+      "lutName",
+      "lutPath",
+      "lutSize",
+      "lutIsSceneReferred",
+      "vignetteAmount",
+      "vignetteFeather",
+      "vignetteMidpoint",
+      "vignetteRoundness",
+      "vignetteCenterX",
+      "vignetteCenterY",
+      "lensBlurEnabled",
+      "lensBlurAmount",
+      "lensBlurDiffusion",
+      "lensBlurShape",
+      "lensBlurDepthMap",
+      "lensBlurMinDepth",
+      "lensBlurMaxDepth",
+      "lensBlurMinFade",
+      "lensBlurMaxFade",
+      "relightEnabled",
+      "relightNormalMap",
+      "relightLights",
+      "relightAmbient",
+      "relightSoftness",
+      "relightShine",
+      "relightShadows",
+      "relightShadowSoftness",
+      "fogEnabled",
+      "fogDepthMap",
+      "fogAmount",
+      "fogStart",
+      "fogDensity",
+      "fogHeight",
+      "fogVariation",
+      "fogGlow",
+      "fogTemperature",
+      "fogTint"
+    ]
+  },
+  "ranges": {
+    "exposure": {
+      "min": -5.0,
+      "max": 5.0,
+      "step": 0.01,
+      "source": {
+        "path": "src/components/adjustments/Basic.tsx",
+        "line": 185
+      }
+    },
+    "contrast": {
+      "min": -100.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Basic.tsx",
+        "line": 204
+      }
+    },
+    "highlights": {
+      "min": -100.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Basic.tsx",
+        "line": 214
+      }
+    },
+    "shadows": {
+      "min": -100.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Basic.tsx",
+        "line": 224
+      }
+    },
+    "whites": {
+      "min": -100.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Basic.tsx",
+        "line": 234
+      }
+    },
+    "blacks": {
+      "min": -100.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Basic.tsx",
+        "line": 244
+      }
+    },
+    "brightness": {
+      "min": -5.0,
+      "max": 5.0,
+      "step": 0.01,
+      "source": {
+        "path": "src/components/adjustments/Basic.tsx",
+        "line": 254
+      }
+    },
+    "sharpness": {
+      "min": -100.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Details.tsx",
+        "line": 70
+      }
+    },
+    "sharpnessThreshold": {
+      "min": 0.0,
+      "max": 80.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Details.tsx",
+        "line": 80
+      }
+    },
+    "clarity": {
+      "min": -100.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Details.tsx",
+        "line": 101
+      }
+    },
+    "dehaze": {
+      "min": -100.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Details.tsx",
+        "line": 111
+      }
+    },
+    "structure": {
+      "min": -100.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Details.tsx",
+        "line": 121
+      }
+    },
+    "centré": {
+      "min": -100.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Details.tsx",
+        "line": 136
+      }
+    },
+    "aiDenoiseAmount": {
+      "min": 0.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Details.tsx",
+        "line": 206
+      }
+    },
+    "aiDenoiseDetail": {
+      "min": 0.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Details.tsx",
+        "line": 219
+      }
+    },
+    "chromaticAberrationRedCyan": {
+      "min": -100.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Details.tsx",
+        "line": 244
+      }
+    },
+    "chromaticAberrationBlueYellow": {
+      "min": -100.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Details.tsx",
+        "line": 253
+      }
+    },
+    "negativeRedWeight": {
+      "min": 0.5,
+      "max": 2.0,
+      "step": 0.01,
+      "source": {
+        "path": "src/components/adjustments/Details.tsx",
+        "line": 280
+      }
+    },
+    "negativeGreenWeight": {
+      "min": 0.5,
+      "max": 2.0,
+      "step": 0.01,
+      "source": {
+        "path": "src/components/adjustments/Details.tsx",
+        "line": 293
+      }
+    },
+    "negativeBlueWeight": {
+      "min": 0.5,
+      "max": 2.0,
+      "step": 0.01,
+      "source": {
+        "path": "src/components/adjustments/Details.tsx",
+        "line": 306
+      }
+    },
+    "negativeExposure": {
+      "min": -2.0,
+      "max": 2.0,
+      "step": 0.05,
+      "source": {
+        "path": "src/components/adjustments/Details.tsx",
+        "line": 319
+      }
+    },
+    "negativeContrast": {
+      "min": 0.5,
+      "max": 2.5,
+      "step": 0.05,
+      "source": {
+        "path": "src/components/adjustments/Details.tsx",
+        "line": 330
+      }
+    },
+    "glowAmount": {
+      "min": 0.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 396
+      }
+    },
+    "halationAmount": {
+      "min": 0.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 406
+      }
+    },
+    "flareAmount": {
+      "min": 0.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 419
+      }
+    },
+    "lensBlurAmount": {
+      "min": 0.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 466
+      }
+    },
+    "lensBlurDiffusion": {
+      "min": 0.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 480
+      }
+    },
+    "relightAmbient": {
+      "min": -100.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 555
+      }
+    },
+    "relightSoftness": {
+      "min": 0.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 567
+      }
+    },
+    "relightShine": {
+      "min": 0.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 581
+      }
+    },
+    "relightShadowSoftness": {
+      "min": 0.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 600
+      }
+    },
+    "fogAmount": {
+      "min": 0.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 836
+      }
+    },
+    "fogStart": {
+      "min": 0.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 848
+      }
+    },
+    "fogDensity": {
+      "min": 0.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 860
+      }
+    },
+    "fogHeight": {
+      "min": 0.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 872
+      }
+    },
+    "fogVariation": {
+      "min": 0.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 884
+      }
+    },
+    "fogGlow": {
+      "min": 0.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 896
+      }
+    },
+    "fogTemperature": {
+      "min": -100.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 908
+      }
+    },
+    "fogTint": {
+      "min": -100.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 921
+      }
+    },
+    "vignetteAmount": {
+      "min": -100.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 963
+      }
+    },
+    "vignetteMidpoint": {
+      "min": 0.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 973
+      }
+    },
+    "vignetteRoundness": {
+      "min": -100.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 984
+      }
+    },
+    "vignetteFeather": {
+      "min": 0.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 993
+      }
+    },
+    "grainAmount": {
+      "min": 0.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 1010
+      }
+    },
+    "grainSize": {
+      "min": 0.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 1019
+      }
+    },
+    "grainRoughness": {
+      "min": 0.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 1030
+      }
+    }
+  }
+}

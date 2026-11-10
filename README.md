@@ -1,106 +1,50 @@
 # Cinematic RAW Studio — Android
 
-A native Android editor for **.CRAW** raw video (from [RawLens](#related-projects)):
-browse takes, grade them with MLV-App's own image processing, cut them on a
-multi-track timeline with audio, and export H.264 / HEVC (including 10-bit
-HEVC Main10) or the original frames as CinemaDNG.
+Native Android editing for .CRAW video: library, RapidRAW Vulkan grading, multi-track timeline/audio, and H.264 / HEVC / Main10 or original CinemaDNG export.
 
-Kotlin + Jetpack Compose UI, C++ and Vulkan for decoding, demosaicing and
-grading. Licence: **GPL-3.0-or-later**.
+## Current processing pipeline
 
-## Features
+1. CRAW decoding and recorded capture calibration.
+2. The exact coherent-green/chroma MHC routines copied from the local RawLens working tree, pinned by file hashes in `third_party/rawlens-mhc-reference/manifest.json`.
+3. Pinned RapidRAW host parameter preparation and Vulkan compute grading (`f1d71a69eef813432db214f77969f567c41ff1d7`).
+4. Preview frame assembly on the GPU; Main10 fitting/BT.709 P010 conversion on the GPU, followed by a bounded readback/copy into MediaCodec's planes.
 
-**Library**
-- Grid of takes from a folder (RawLens saves to `DCIM/RawLens`) with
-  thumbnails and RAW/RGB, codec (Balanced, Live v1 — Legacy, Live, Compact — Offline), audio and
-  duration badges.
-- Sort (date, name, size, duration) and filter (Bayer RAW, binned RGB, with
-  audio); search.
-- Long press: edit, paste settings, add to project, export video, export
-  CinemaDNG, info (camera, ISO, shutter, as-shot white balance, codec, bit
-  depth, audio), delete.
+The old MLV-App processing, CPU grading fallback, RCD backend and old editor controls have been removed. There is one new renderer for single-take editing, project monitoring and exports.
 
-**Editor** — Lightroom-style layout
-- Categories: Light, Colour, Curves, Detail, Effects, Optics, Profile. Every
-  control is MLV-App's, with MLV-App's ranges and defaults.
-- Sections can be collapsed, reset, or switched off in the preview to compare.
-- Press and hold for the original, split before/after view, RGB histogram,
-  full screen (tap the picture).
-- Undo/redo, copy/paste settings between takes, named presets.
-- MLV-App RAW corrections: vertical stripes, bad pixels, pattern noise,
-  chroma smoothing.
+## Toolset
 
-**Projects** — multi-track timeline
-- Video track with linked camera audio, extra audio tracks (WAV or any
-  Android-decodable format), mute and solo, waveforms.
-- Move and trim with live dragging and snapping to clip edges and the
-  playhead; split, trim to playhead, duplicate, delete, grade per clip.
-- Pinch or slider zoom; undo/redo; autosave. Rename, duplicate and delete
-  projects.
+This delivery follows the requested **basic, AI-free Vulkan grading** scope:
 
-**Export**
-- Presets (UHD 10-bit HEVC, source 10-bit master, 1080p H.264, 1080p HEVC,
-  720p preview) or custom codec, resolution and bitrate; mixed AAC audio.
-- Sizes are fitted to the device's hardware encoder limits (e.g. 4080×2040 →
-  3840×1920 on encoders capped at 3840 wide).
-- Background queue in a foreground service with a progress notification; an
-  Exports tab with cancel, retry, play and share.
-- Original CinemaDNG sequence + WAV export.
+- Exposure, contrast, brightness, highlights/shadows, whites/blacks.
+- As-shot white balance with temperature/tint adjustments, saturation, vibrance and hue.
+- HSL mixer, four color wheels, color calibration and monochrome controls.
+- Point and parametric curves, including the original curve scaling/math.
+- Sharpening, clarity/dehaze/structure, GPU luma/chroma noise reduction and chromatic aberration adjustments.
+- Glow/halation/flare, vignette and grain.
+- Imported cube/3dl/Hald LUTs; geometric and brush local-adjustment masks.
+- Original RapidRAW output plus retained Filament AgX and ACES 2.0 outputs.
 
-## How the image is processed
+AI inference/models, generated patches, depth/normal-map effects, negative-film conversion and advanced geometry are outside this basic delivery. Imported grades with active unsupported tools fail explicitly rather than render an incomplete grade.
 
-1. **Decode** the .CRAW frame (vendored CRAW decoder, multi-threaded).
-2. **Demosaic** on the GPU with RawLens's Vulkan Packed RCD pipeline.
-3. **Grade** with MLV-App's processing:
-   - paused frames and export: MLV-App's per-pixel loop as a Vulkan compute
-     shader (`app/src/main/shaders/mlv_grade.comp`) reading MLV-App's own
-     lookup tables;
-   - settings that need MLV-App's spatial stages (clarity, shadows /
-     highlights, sharpening, denoisers, LUTs, …) run MLV-App's own C code.
-4. **Encode** with MediaCodec (P010 written directly by the GPU for export).
+## Playback, projects and export
 
-Grading code is not re-invented: it is MLV-App, vendored and checked against
-the original by parity tests (see [Testing](#testing) and
-[docs/mlv-app-parity.md](docs/mlv-app-parity.md)).
+Play/pause, frame stepping and continuous scrubbing use the sequence scheduler. Video follows mixed audio's output clock. Timeline cuts, trims, moves, linked camera audio, additional audio tracks, mute/solo and saved projects remain supported.
 
-## Status
+Preview uses an explicitly labeled half-size Bayer proxy and a 64 MiB cache of graded frames. Cache keys contain the source frame and complete-grade fingerprint. Export uses full source resolution before fitting to the hardware encoder's output limits. Preview native resources are released while the export queue is active.
 
-Codec IDs 1–4 display as Balanced, Live v1 — Legacy, Live and Compact — Offline. These
-names do not imply a universal compression/speed ranking; Fast predates Live.
-The editor, RawLens and the desktop tools are first-party consumers, not
-evidence of independent third-party adoption. The
-[shared benchmark guide](https://github.com/matthew777777/CinematicRAWStudio-Spec/blob/main/BENCHMARKS.md)
-and [2026-10-30 comparison](https://github.com/matthew777777/CinematicRAWStudio-Spec/tree/main/results/comparison-20261030)
-compare identical RAW samples with JPEG XL and report memory, decode/encode
-cost and sustained isolated phone loops. Those loops exclude Vulkan,
-grading, sound, MediaCodec and recorder overhead; they do not establish
-editor playback or export fps.
+Project version 2 stores complete RapidRAW grade envelopes. Version-1 grades are retained as opaque legacy JSON and require an explicit reset before rendering; their old slider values are never silently reinterpreted. Source takes are not changed. Original CinemaDNG/WAV conversion retains source samples and calibration.
 
-| phase | scope | status |
-|---|---|---|
-| 1 | Library, player with audio as master clock, frame step, scrubbing | done |
-| 2 | RawLens Vulkan pipeline, half-res playback proxy, decode-ahead | done — 30 fps playback (CRAW-Live v2) on Dimensity 7300 |
-| 3 | Editor on MLV-App processing and RAW corrections, per-take settings | done |
-| 4 | Project timeline with audio | done; transitions and compositing not yet |
-| 5 | H.264 / HEVC / HEVC Main10 export, queue, CinemaDNG export | done; HDR and intermediate codecs not yet |
-| 6 | CinemaDNG sequences as sources | not started |
+## Validation status
 
-Known limitations:
-- UHD 10-bit export runs at about 4–5 fps on a Dimensity 7300 (Mali-G615 MC2).
-- Playback uses the RawLens GPU grade; MLV-App grading applies to paused
-  frames and to export.
-- Binned RGB takes play and export but cannot be graded.
+See [docs/rapidraw-engine.md](docs/rapidraw-engine.md) and `docs/benchmarks/2026-11-10/` for the current local checks and their limits. Local tests cover timeline scheduling/persistence, parameter math, exact curve float bits, coherent MHC invariants, GPU frame-assembly identity and high-precision/P010 output.
+
+**Native 30 fps playback and export throughput have not been established for this replacement on Android hardware.** Earlier RCD/MLV performance results do not validate the new pipeline. Host synthetic timings include multiple test renders and must not be presented as playback/export fps.
 
 ## Requirements
 
-- The same devices as RawLens: Android 11 (API 30) or newer, 64- or 32-bit
-  ARM (`arm64-v8a`, `armeabi-v7a`), Vulkan 1.1 with AHardwareBuffer import.
-- The Vulkan grade follows RawLens's rules for Adreno and Mali: GPU chosen by
-  capability, the driver's own format for imported buffers, shared images
-  handed over through `VK_QUEUE_FAMILY_FOREIGN_EXT`, 128-invocation
-  workgroups. Anything a GPU cannot do falls back to MLV-App's CPU code.
-- Developed and tested on a Xiaomi 25080RABDG (MediaTek MT6878 / Dimensity
-  7300, Mali-G615).
+Android 11/API 30 or newer, ARM64 or ARMv7, and a working Vulkan implementation supporting the compute graph's texture/buffer formats. Unsupported devices report an error; there is no legacy CPU-grade fallback.
+
+A build requires the Android SDK, NDK 27.0.12077973, Rust/cargo and the Rust targets `aarch64-linux-android` and `armv7-linux-androideabi`. Use `rustup target add aarch64-linux-android armv7-linux-androideabi` before the first native build.
 
 ## Building
 
@@ -138,89 +82,38 @@ with the standard debug key, so anyone can build and install them. Check
 the signer with
 `apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk`.
 
-## Testing
+## CRAW Compact
 
-**MLV-App parity (host vs phone, needs adb)**
-- `tests/mlvapp-parity/run.sh` — every processing stage alone and all
-  together: MLV-App built for the Mac vs for Android, 1 and 8 threads.
-- `tests/mlvapp-parity/run_rawtools.sh take.craw` — the RAW corrections.
+Library takes can be converted losslessly to Compact in their original directory. Conversion runs in the background queue, preserves source metadata/audio/motion data, and fully verifies the published file before offering to keep or delete the original. Saved project links continue through a durable source replacement mapping. No original is automatically removed. See [the Compact workflow and validation](docs/compact-conversion.md).
 
-**Device tests** run on the `deviceTest` build type (release in every
-respect but R8). Install it and its test APK, then:
+## Headless checks
 
 ```sh
-./gradlew :app:assembleDeviceTest :app:assembleDeviceTestAndroidTest
-adb install -r -t app/build/outputs/apk/deviceTest/app-deviceTest.apk
-adb install -r -t app/build/outputs/apk/androidTest/deviceTest/app-deviceTest-androidTest.apk
-adb shell cmd package compile -m speed -f com.matthew.crs   # full AOT, for benchmarks
-
-R=com.matthew.crs.test/com.matthew.crs.ProjectInstrumentation
-adb shell am instrument -w -e headless true $R                      # project, export, audio, CinemaDNG
-adb shell am instrument -w -e headless true -e gpuparity true $R    # Vulkan grade vs MLV-App's C code
-adb shell am instrument -w -e headless true -e main10hires true $R  # UHD HEVC Main10 export + speed
+python3 tools/verify_craw_sources.py
+python3 tests/compact/run.py
+python3 tools/verify_rapidraw_reference.py
+python3 tools/generate_rapidraw_schema.py --check
+python3 tools/port_rapidraw_core.py --check
+python3 tools/port_rapidraw_renderer.py --check
+python3 tools/port_rapidraw_masks.py --check
+python3 tools/port_rawlens_mhc.py --check
+cargo test --locked --manifest-path app/src/main/rust/rapidraw-core/Cargo.toml --lib
+cargo run --locked --features gpu --manifest-path app/src/main/rust/rapidraw-core/Cargo.toml --bin render-fixture -- /tmp/crs-rapidraw-fixtures
+./gradlew :app:testDeviceTestUnitTest :app:assembleDeviceTest :app:assembleDeviceTestAndroidTest :app:assembleRelease
 ```
 
-They read takes from the library folder chosen in the app: the full suite
-needs a Bayer take and a binned RGB take; `main10hires` a Bayer take at least
-3840 wide and 3 s long.
+The Android instrumentation runner supports headless engine/source and project/video/audio checks. No current device deployment or visual QA is implied by a local APK build.
 
-The minified release APK cannot host instrumentation (R8 removes Kotlin
-runtime classes the test APK needs); smoke-test it by hand before a release:
-open a take, grade, export, open About.
+## Source and licensing
 
-Unit tests: `./gradlew :app:testDeviceTestUnitTest`.
+The Android shell is Kotlin/Compose, source decoding is C++, and demosaic/grading/delivery are Vulkan through the independent Rust host. Frozen upstream code and generated adapters are kept separate so changes are reviewable.
 
-## Repository layout
-
-```
-app/src/main/java/com/matthew/crs/   UI, player, editor, library
-app/src/main/java/com/matthew/crs/project/   timeline, audio mix, export, queue
-app/src/main/java/com/matthew/rawlens/       RawLens Kotlin JNI classes (vendored)
-app/src/main/cpp/      JNI: clip decoding, MLV-App bridge, Vulkan grade, P010
-app/src/main/shaders/  Vulkan compute shaders (MLV-App grade, output)
-third_party/           vendored sources, each with SOURCE.md and LICENSE
-tests/                 MLV-App parity tests
-tools/                 sync scripts for third_party, MLV-App patches
-docs/                  parity results, editor and export notes
-```
-
-## Third-party code
-
-Vendored unchanged except for documented patches; each directory names its
-source commit in `SOURCE.md`. Update with the sync scripts in `tools/`.
-
-| directory | source | licence |
+| Component | Use | License |
 |---|---|---|
-| `third_party/mlv-app` | [MLV-App](https://github.com/ilia3101/MLV-App) processing, matrix and RAW-correction code; bug fixes in `tools/patches/mlv-app` | GPL-3.0 (bundled parts: Sobel Apache-2.0, RBFilter MIT, TinyExpr and GENANN zlib) |
-| `third_party/rawlens-gpu` | RawLens Vulkan pipeline (Packed RCD, grade) | GPL-3.0 |
-| `third_party/craw` | CinematicRAWStudio encoder, decoder (+ Clip helper) and TUI developer | Apache-2.0 |
+| RapidRAW reference/core/shaders | Parameter preparation and Vulkan grading | AGPL-3.0 |
+| RawLens MHC reference | Exact coherent reconstruction routines | GPL-3.0-or-later |
+| CRAW encoder/decoder and Clip helper | Source decoding, metadata, audio and original DNG | Apache-2.0 |
+| OpenColorIO ACES 2.0 | Retained output-transform reference | BSD-3-Clause |
+| Google Filament AgX | Retained output transform | Apache-2.0 |
 
-The app shows all licence texts under **Library ⋮ → About & licences**.
-
-## Related projects
-
-- **RawLens** — Android camera app that records .CRAW.
-- **CinematicRAWStudio-Spec / -Encoder / -Decoder / -TUI** — the .CRAW
-  format, its reference encoder and decoder, and a desktop developer.
-
-## Licence
-
-GPL-3.0-or-later; see [LICENSE](LICENSE). Vendored components keep their own
-licences (above).
-
-
-## Codec display names
-
-| ID | Display name | Historical names / aliases |
-|---:|---|---|
-| 1 | **CRAW Balanced** | CRAW-Fast, Fast |
-| 2 | **CRAW Live v1 — Legacy** | CRAW-Live, CRAW-Live v1, Live v1 |
-| 3 | **CRAW Live** | CRAW-Live v2, Live v2 |
-| 4 | **CRAW Compact — Offline** | CRAW-Compact, Desktop Compact |
-
-These are display names. Codec IDs, encoded bytes, saved numeric preferences
-and legacy metadata strings retain their existing meanings. Existing recordings
-are not rewritten. Historical benchmark reports keep their original labels;
-use the IDs to match them to this table. Balanced describes the intended
-size/CPU tradeoff, not a guarantee of the smallest files. Live is the current
-recording choice; Live v1 is retained for compatibility and Compact is offline.
+App sources retain their notices. Bundled component licenses are available in About; distribution must comply with the included RapidRAW AGPL terms. No release has been published by this local migration.

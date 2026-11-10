@@ -1,0 +1,350 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Coherent-green video reconstruction + grade + P010 finalize.
+// A preceding packed-green pass reconstructs green with continuous
+// gradient weights. This pass interpolates color differences at actual
+// chroma samples, preserving measured CFA channels. No white-glint blur.
+// Complete 2x2 encoded cells contribute to each P010 chroma sample.
+// CPU twin: MhcReference.demosaicCoherent. This is not exact RCD.
+//
+// Params arrive as a 192-byte SSBO (FusedParams in vf_vulkan_vf.cpp).
+//
+// Regenerate the SPIR-V with:
+//   glslangValidator -V --target-env vulkan1.1 vf_mhcyuv.comp -o vf_mhcyuv.spv
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_control_flow_attributes : require
+
+#ifdef RECORD_CUBE
+#include "../record_cube.glsl"
+#endif
+// 16x16 workgroups (MHC's shape, not grade's 8x8): the fused kernel
+// is tap-heavy like MHC, and wider groups give the scheduler more
+// threads to cover tap latency with.
+layout(local_size_x = 16, local_size_y = 16) in;
+
+// Byte-exact sensor view (vf_superpixel convention): each uint holds 2
+// LE pixels, stride is the Image plane pitch in pixels.
+layout(binding = 0) readonly buffer Bayer { uint codes[]; };
+layout(binding = 1) writeonly buffer P010 { uint words[]; } buf_out;
+
+// Mirrors FusedParams in vf_vulkan_vf.cpp exactly (192 bytes, std430).
+struct FusedParams {
+    ivec2 cDims;      // crop W/H (MHC domain, full res)
+    ivec2 cOrigin;    // crop left/top in sensor pixels (CFA phase)
+    ivec4 cChans;     // quad-offset map, channels[] convention
+    vec4 cNormBias;   // per-quad-pos -black * invRange (FMA bias)
+    vec4 cInvRange;   // per-quad-pos 1/(white-black)
+    int cPitch;       // sensor row stride in pixels
+    int _pad0;
+    ivec2 oDims;      // output W/H (encode res)
+    vec4 gGains;      // R, G, B white-balance gains (+1 spare, folded: unused)
+    vec4 gCcmR;
+    vec4 gCcmG;
+    vec4 gCcmB;
+    vec4 gMisc;       // exposureEV, yStrideW, uvStrideW, uvBaseOffB
+    ivec4 sDims;      // shade rows, cols, enable, outMode
+    vec4 sActive;     // shade active l, t, 1/w, 1/h (sensor pixels)
+};
+layout(binding = 2) readonly buffer Fused { FusedParams u; };
+// Reserved for upcoming LUT support: still bound every submit (the
+// native gate requires the upload), not fetched (direct encode).
+layout(binding = 3) uniform sampler3D gradeLut;
+// HAL lens-shading map as RGBA16F (Camera2 order), hardware-bilinear
+// sampled: 16 manual loads + weight ALU per texel cost ~7ms on this
+// kernel (measured); one texture fetch is ~0.5ms.
+layout(binding = 4) uniform sampler2D shadeMap;
+
+// ---- MHC (copied from vf_mhc.comp; see its header) ----
+
+// Green edge-gate band, mirrors MhcReference.GREEN_EDGE_T0/T1.
+const float GREEN_EDGE_T0 = 0.03;
+const float GREEN_EDGE_T1 = 0.08;
+// Chroma side floor + level-ratio regularizer, mirrors
+// MhcReference.BILATERAL_EPS/LEVEL_EPS.
+const float BILATERAL_EPS = 1e-3;
+const float LEVEL_EPS = 0.002;
+// Sensor-white desaturation band, mirrors MhcReference.DESAT_LO/HI
+// (same anchors as the AMaZE JPEG path).
+const float DESAT_LO = 0.70;
+const float DESAT_HI = 0.99;
+// Demosaiced output ceiling, mirrors MhcReference.OUTPUT_CLAMP_HI
+// (see vf_mhc.comp).
+const float OUTPUT_CLAMP_HI = 4.0;
+
+// Phase-preserving edge mirror (single reflection covers our +-2
+// stencil on any dims >= 8).
+int mir(int i, int n) {
+    if (i < 0) i = -i;
+    if (i >= n) i = 2 * n - 2 - i;
+    return i;
+}
+
+// Quad offset (0..3) of crop pixel s in sensor phase.
+int quadOf(ivec2 s) {
+    return (((s.y + u.cOrigin.y) & 1) << 1) | ((s.x + u.cOrigin.x) & 1);
+}
+
+// CFA color 0=R 1=G 2=B by inverting channels[] (canonical 1 AND 2 are
+// both green: Gr and Gb share a quad diagonal).
+int colorAt(ivec2 s) {
+    int q = quadOf(s);
+    if (u.cChans.x == q) return 0;
+    if (u.cChans.y == q || u.cChans.z == q) return 1;
+    return 2;
+}
+
+// Unpack + normalize one sensor pixel from a precomputed plane index
+// with precomputed quad phase. Single FMA, unclipped (kernel outputs
+// are unclipped anyway; the grade packs clamped codes downstream).
+float normIdx(int idx, int q) {
+    uint uu = uint(idx);
+    uint word = codes[uu >> 1u];
+    uint code = ((uu & 1u) == 0u) ? (word & 0xFFFFu) : (word >> 16u);
+    return clamp(fma(float(code), u.cInvRange[q], u.cNormBias[q]),0.0,1.0);
+}
+
+// Unpack + normalize from an already-loaded word (the caller
+// guarantees word == codes[idx >> 1]) with a precomputed shift.
+float normShift(uint word, uint shift, int q) {
+    uint code = (word >> shift) & 0xFFFFu;
+    return clamp(fma(float(code), u.cInvRange[q], u.cNormBias[q]),0.0,1.0);
+}
+
+// Edge path: mirror into range first (phase preserving), then unpack.
+float normEdge(ivec2 s) {
+    ivec2 m = ivec2(mir(s.x, u.cDims.x), mir(s.y, u.cDims.y));
+    int q = quadOf(m);
+    int idx = (m.y + u.cOrigin.y) * u.cPitch + (m.x + u.cOrigin.x);
+    return normIdx(idx, q);
+}
+
+// Green is reconstructed once in a preceding compact pass. Chroma uses
+// green at each actual chroma sample, avoiding the old raw-side level ratios.
+layout(binding = 5) readonly buffer CoherentGreen { uint greenWords[]; };
+float greenAt(ivec2 s) {
+    ivec2 m = ivec2(mir(s.x,u.cDims.x),mir(s.y,u.cDims.y));
+    uint word = greenWords[m.y * ((u.cDims.x + 1) / 2) + m.x / 2];
+    vec2 pair = unpackHalf2x16(word);
+    return ((m.x & 1) == 0) ? pair.x : pair.y;
+}
+vec3 mhcRgb(ivec2 s) {
+    float c=normEdge(s);
+    int col=colorAt(s);
+    float g=(col==1) ? c : greenAt(s);
+    float r; float b;
+    if (col==1) {
+        float n=normEdge(s+ivec2(0,-1)); float so=normEdge(s+ivec2(0,1));
+        float w=normEdge(s+ivec2(-1,0)); float e=normEdge(s+ivec2(1,0));
+        float w2=normEdge(s+ivec2(-2,0)); float e2=normEdge(s+ivec2(2,0));
+        float n2=normEdge(s+ivec2(0,-2)); float s2=normEdge(s+ivec2(0,2));
+        float gw=greenAt(s+ivec2(-1,0)); float ge=greenAt(s+ivec2(1,0));
+        float gn=greenAt(s+ivec2(0,-1)); float gs=greenAt(s+ivec2(0,1));
+        float ww=0.001+abs(g-ge)+abs(c-e2);
+        float we=0.001+abs(g-gw)+abs(c-w2);
+        float wn=0.001+abs(g-gs)+abs(c-s2);
+        float ws=0.001+abs(g-gn)+abs(c-n2);
+        float ew=g+(ww*(w-gw)+we*(e-ge))/(ww+we);
+        float ns=g+(wn*(n-gn)+ws*(so-gs))/(wn+ws);
+        bool redEW=colorAt(s+ivec2(1,0))==0;
+        r=redEW ? ew : ns; b=redEW ? ns : ew;
+    } else {
+        float nw=normEdge(s+ivec2(-1,-1)); float ne=normEdge(s+ivec2(1,-1));
+        float sw=normEdge(s+ivec2(-1,1)); float se=normEdge(s+ivec2(1,1));
+        float gnw=greenAt(s+ivec2(-1,-1)); float gne=greenAt(s+ivec2(1,-1));
+        float gsw=greenAt(s+ivec2(-1,1)); float gse=greenAt(s+ivec2(1,1));
+        float wnw=1.0/(0.001+abs(g-gnw)+abs(nw-se));
+        float wse=1.0/(0.001+abs(g-gse)+abs(nw-se));
+        float wne=1.0/(0.001+abs(g-gne)+abs(ne-sw));
+        float wsw=1.0/(0.001+abs(g-gsw)+abs(ne-sw));
+        float opposite=g+(wnw*(nw-gnw)+wne*(ne-gne)+wsw*(sw-gsw)+wse*(se-gse))/(wnw+wne+wsw+wse);
+        r=(col==0) ? c : opposite;
+        b=(col==2) ? c : opposite;
+    }
+    return clamp(vec3(r,g,b),vec3(0.0),vec3(OUTPUT_CLAMP_HI));
+}
+
+// ---- direct-encode record grade: no warp, no saturation ----
+// Identical to the grade-YUV stage: the two record paths agree by
+// construction. CPU goldens are VfVideoGrade.encodePixel*.
+vec3 bt709Encode(vec3 v) {
+    v = clamp(v, 0.0, 1.0);
+    vec3 lo = 4.5 * v;
+    vec3 hi = 1.099 * pow(v, vec3(0.45)) - 0.099;
+    return mix(hi, lo, vec3(lessThan(v, vec3(0.018))));
+}
+
+float hlgOetf(float e) {
+    e = clamp(e, 0.0, 1.0);
+    if (e <= 1.0 / 12.0) return sqrt(3.0 * e);
+    // Natural log (BT.2100 Table 5); rounded constants overshoot 1.0
+    // by ~8e-5 at E = 1, hence the clamp.
+    return clamp(0.17883277 * log(12.0 * e - 0.28466892) + 0.55991073, 0.0, 1.0);
+}
+
+vec3 hlgEncode(vec3 v2020) {
+    return vec3(hlgOetf(v2020.r), hlgOetf(v2020.g), hlgOetf(v2020.b));
+}
+
+// Linear sRGB (D65) -> linear BT.2020 (D65), dot form (avoids mat3
+// layout pitfalls); mirrors VfVideoGrade.SRGB_TO_BT2020.
+vec3 srgbToBt2020(vec3 v) {
+    return vec3(
+        dot(v, vec3(0.6274040, 0.3292820, 0.0433136)),
+        dot(v, vec3(0.0690970, 0.9195400, 0.0113612)),
+        dot(v, vec3(0.0163916, 0.0880132, 0.8955950)));
+}
+
+// Sony S-Log3, normalized (same mapping as vf_videograde.comp):
+// divisor 0.19, 95-code black pedestal.
+// BEGIN generated Sony gamut (tools/generate_sgamut3_cine.py)
+vec3 srgbToSgamut3Cine(vec3 v) {
+    return vec3(dot(v, vec3(0.6456794776, 0.2591145470, 0.0952059754)),
+        dot(v, vec3(0.0875299915, 0.7596995626, 0.1527704459)),
+        dot(v, vec3(0.0369574199, 0.1292809048, 0.8337616753)));
+}
+// END generated Sony gamut
+
+float slog3cutY() {
+    return (420.0 + log2((0.01125 + 0.01) / 0.19) * 0.30102999566 * 261.5) / 1023.0;
+}
+
+float sonySlog3(float x) {
+    if (x >= 0.01125) {
+        // log10 via log2 (GLSL has no log10): 1/log2(10) = 0.30103.
+        return (420.0 + log2((x + 0.01) / 0.19) * 0.30102999566 * 261.5) / 1023.0;
+    }
+    return (95.0 + x * (slog3cutY() * 1023.0 - 95.0) / 0.01125) / 1023.0;
+}
+
+vec3 slogEncode(vec3 v) {
+    v = srgbToSgamut3Cine(v);
+    vec3 encoded = vec3(sonySlog3(v.r), sonySlog3(v.g), sonySlog3(v.b));
+#ifdef RECORD_CUBE
+    return applyRecordLut(encoded);
+#else
+    return encoded;
+#endif
+}
+
+// Grade: direct profile encode of the developed linear value. CCM
+// arrives WB+exposure-folded on the CPU. outMode (u.sDims.w): 0 =
+// BT.709, 1 = Sony S-Log3 (flat), 2 = BT.2020 + HLG. The branch is
+// SSBO-uniform: no divergence.
+
+// Output is display-linear: encode with inverse BT.1886 (gamma 2.4), not camera OETF.
+// ACES fitted rendering, Stephen Hill's RRT/ODT approximation.
+// Reference: TheRealMJP/BakingLab, ACES.hlsl (MIT).
+vec3 acesFitted(vec3 v) {
+    // Keep signed CCM values until the reference fit's final clamp.
+    v = vec3(dot(v, vec3(0.59719,0.35458,0.04823)),
+             dot(v, vec3(0.07600,0.90834,0.01566)),
+             dot(v, vec3(0.02840,0.13383,0.83777)));
+    v = (v*(v+0.0245786)-0.000090537)/(v*(0.983729*v+0.4329510)+0.238081);
+    return clamp(vec3(dot(v,vec3(1.60475,-0.53108,-0.07367)),
+                      dot(v,vec3(-0.10208,1.10813,-0.00605)),
+                      dot(v,vec3(-0.00327,-0.07276,1.07602))),0.0,1.0);
+}
+vec3 gradeRgb(vec3 rgb) {
+    vec3 developed = vec3(dot(u.gCcmR.rgb, rgb), dot(u.gCcmG.rgb, rgb), dot(u.gCcmB.rgb, rgb));
+    int mode = u.sDims.w;
+    if (mode == 3) return pow(acesFitted(developed), vec3(1.0 / 2.4));
+    if (mode == 1) return slogEncode(developed);
+    if (mode == 2) return hlgEncode(srgbToBt2020(developed));
+    return bt709Encode(developed);
+}
+
+// Lens-shading gains (R, Gr, Gb, B) at sensor pixel s, one hardware-
+// bilinear texture fetch. The (mx + 0.5) / size un-mapping cancels the
+// sampler's half-texel convention, so the weights equal
+// LensShadingModel.gainAt per channel (same clamp/edge behavior, incl.
+// 1-wide maps) up to fp16/fp32 rounding (gains are smooth, ~0.1%).
+vec4 shadeGains(ivec2 s) {
+    float nx = clamp((float(s.x) - u.sActive.x) * u.sActive.z, 0.0, 1.0);
+    float ny = clamp((float(s.y) - u.sActive.y) * u.sActive.w, 0.0, 1.0);
+    float mx = nx * float(u.sDims.y - 1);
+    float my = ny * float(u.sDims.x - 1);
+    vec2 uv = vec2((mx + 0.5) / float(u.sDims.y), (my + 0.5) / float(u.sDims.x));
+    return texture(shadeMap, uv);
+}
+
+// Sensor-domain white-point protection (CPU mirror:
+// MhcReference.desaturateHighlights; same formula as the AMaZE JPEG
+// final stage): approaching RAW clip, converge on the camera neutral
+// BEFORE white balance, so clipped white renders white instead of
+// magenta. Pre-shade: clip is sensor saturation, and shade would drag
+// amplified midtones into the band (the shading proof pins 2x gains).
+vec3 desatWhite(vec3 rgb) {
+    vec3 gains = max(u.gGains.rgb, vec3(1e-6));
+    float minG = min(gains.r, min(gains.g, gains.b));
+    vec3 neutral = vec3(minG) / gains;
+    vec3 wb = smoothstep(vec3(DESAT_LO), vec3(DESAT_HI), rgb);
+    float blend = max(wb.r, max(wb.g, wb.b));
+    return mix(rgb, neutral, blend);
+}
+
+// Display RGB for one output texel (nearest src cover + MHC + grade).
+vec3 pixelLog(ivec2 ij) {
+    ivec2 s;
+    if (all(equal(u.cDims, u.oDims))) s = ij;
+    else s = ivec2((vec2(ij) + 0.5) * vec2(u.gCcmR.w,u.gCcmG.w));
+    vec3 rgb = desatWhite(mhcRgb(s));
+    if (u.sDims.z != 0) {
+        // Vignetting, pre-WB like the viewfinder: the map is ~17x17 over
+        // the sensor, so one gain per output texel (not per MHC tap) is
+        // exact to 0.01%. Demosaiced green mixes both parities: mean them.
+        vec4 sg = shadeGains(s + u.cOrigin);
+        rgb *= vec3(sg.x, 0.5 * (sg.y + sg.z), sg.w);
+    }
+    return gradeRgb(rgb);
+}
+
+vec3 rgbToYuv(vec3 rgb, int mode) {
+    if (mode == 2) {
+        // BT.2020 non-constant luminance (Kr = 0.2627, Kb = 0.0593).
+        float y = 0.2627 * rgb.r + 0.6780 * rgb.g + 0.0593 * rgb.b;
+        float cb = (rgb.b - y) / 1.8814 + 0.5;
+        float cc = (rgb.r - y) / 1.4746 + 0.5;
+        return vec3(y, cb, cc);
+    }
+    float y = 0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b;
+    float cb = (rgb.b - y) / (2.0 * (1.0 - 0.0722)) + 0.5;
+    float cc = (rgb.r - y) / (2.0 * (1.0 - 0.2126)) + 0.5;
+    return vec3(y, cb, cc);
+}
+
+uint pack10(float v, float low, float high) {
+    uint code = uint(round(clamp(v, 0.0, 1.0) * (high - low) + low));
+    return (code << 6) & 0xFFC0u;
+}
+
+void main() {
+    // Own a complete 2x2 P010 cell: all four encoded pixels contribute
+    // to 4:2:0 chroma. Sampling only the top row aliases Bayer-phase
+    // color errors into cyan stripes on subpixel specular highlights.
+    // Four pixels / half as many invocations: no extra demosaic work.
+    ivec2 ij = ivec2(gl_GlobalInvocationID.xy) * 2;
+    if (any(greaterThanEqual(ij, u.oDims))) return;
+    int yStride = int(u.gMisc.y);
+    int outMode = u.sDims.w;
+    // Rolled over the two rows: four inlined MHC + grade bodies ran at
+    // 64 registers on Mali-G615 (malioc). Same values, same sum order.
+    uint yIdx = uint(ij.y) * uint(yStride) + uint(ij.x);
+    vec3 sumTop, sumBot;
+    [[dont_unroll]] for (int r = 0; r < 2; ++r) {
+        int y = min(ij.y + r, u.oDims.y - 1);
+        vec3 yuvA = rgbToYuv(pixelLog(ivec2(ij.x, y)), outMode);
+        vec3 yuvB = rgbToYuv(pixelLog(ivec2(min(ij.x + 1, u.oDims.x - 1), y)), outMode);
+        if (ij.y + r < u.oDims.y) {
+            uint idx = yIdx + uint(r) * uint(yStride);
+            buf_out.words[idx >> 1u] = pack10(yuvA.x, 64.0, 940.0)
+                | (pack10(yuvB.x, 64.0, 940.0) << 16u);
+        }
+        if (r == 0) sumTop = yuvA + yuvB; else sumBot = yuvA + yuvB;
+    }
+    vec3 meanUV = (sumTop + sumBot) * 0.25;
+    uint pairIdx = uint(u.gMisc.w) / 2u
+        + uint(ij.y / 2) * uint(u.gMisc.z) + uint(ij.x);
+    buf_out.words[pairIdx >> 1u] = pack10(meanUV.g, 64.0, 960.0)
+        | (pack10(meanUV.b, 64.0, 960.0) << 16u);
+}

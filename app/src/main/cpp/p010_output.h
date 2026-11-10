@@ -67,42 +67,12 @@ inline int p010PlanesToImage(JNIEnv* env, jobject image, const uint16_t* y, cons
     });
 }
 
-// Processed RGB16 -> limited-range BT.709 P010. Quantize only at the 10-bit boundary.
-inline int rgb16ToP010(JNIEnv* env, jobject image, const uint16_t* rgb, int sw, int sh, int w, int h) {
-    return withP010Planes(env, image, w, h, [&](P010Plane* p) {
-        const float scale = rgb && sw > 0 && sh > 0 ? std::min(float(w)/sw,float(h)/sh) : 1.f;
-        const float left = (w-sw*scale)*.5f, top = (h-sh*scale)*.5f;
-        struct RGB { float r,g,b; };
-        auto sample = [&](int x,int y) -> RGB {
-            if (!rgb || sw <= 0 || sh <= 0 || x+.5f < left || y+.5f < top || x+.5f >= left+sw*scale || y+.5f >= top+sh*scale) return {0,0,0};
-            const float sx=std::clamp((x+.5f-left)/scale-.5f,0.f,float(sw-1));
-            const float sy=std::clamp((y+.5f-top)/scale-.5f,0.f,float(sh-1));
-            const int x0=int(sx),y0=int(sy),x1=std::min(x0+1,sw-1),y1=std::min(y0+1,sh-1);
-            const float fx=sx-x0,fy=sy-y0;
-            float c[3]{};
-            for(int k=0;k<3;++k) {
-                const float a=rgb[(size_t(y0)*sw+x0)*3+k]*(1-fx)+rgb[(size_t(y0)*sw+x1)*3+k]*fx;
-                const float b=rgb[(size_t(y1)*sw+x0)*3+k]*(1-fx)+rgb[(size_t(y1)*sw+x1)*3+k]*fx;
-                c[k]=(a*(1-fy)+b*fy)/65535.f;
-            }
-            return {c[0],c[1],c[2]};
-        };
-        auto store = [&](int plane,int x,int y,float value) {
-            const uint16_t code=uint16_t(std::clamp(std::lround(value),0L,1023L))<<6;
-            std::memcpy(p[plane].p+size_t(y)*p[plane].row+size_t(x)*p[plane].pixel,&code,2);
-        };
-        for(int y=0;y<h;y+=2) for(int x=0;x<w;x+=2) {
-            RGB average{};
-            for(int dy=0;dy<2;++dy)for(int dx=0;dx<2;++dx) {
-                const RGB c=sample(x+dx,y+dy);
-                const float luma=.2126f*c.r+.7152f*c.g+.0722f*c.b;
-                store(0,x+dx,y+dy,64.f+876.f*luma);
-                average.r+=c.r*.25f;average.g+=c.g*.25f;average.b+=c.b*.25f;
-            }
-            const float luma=.2126f*average.r+.7152f*average.g+.0722f*average.b;
-            store(1,x/2,y/2,512.f+896.f*(average.b-luma)/1.8556f);
-            store(2,x/2,y/2,512.f+896.f*(average.r-luma)/1.5748f);
-        }
+// Empty timeline canvas: write legal black without invoking any grading engine.
+inline int blackP010Image(JNIEnv* env,jobject image,int w,int h) {
+    return withP010Planes(env,image,w,h,[&](P010Plane* p) {
+        const uint16_t black=64u<<6,neutral=512u<<6;
+        for(int row=0;row<h;++row)for(int x=0;x<w;++x)std::memcpy(p[0].p+size_t(row)*p[0].row+size_t(x)*p[0].pixel,&black,2);
+        for(int plane=1;plane<3;++plane)for(int row=0;row<h/2;++row)for(int x=0;x<w/2;++x)std::memcpy(p[plane].p+size_t(row)*p[plane].row+size_t(x)*p[plane].pixel,&neutral,2);
         return 0;
     });
 }

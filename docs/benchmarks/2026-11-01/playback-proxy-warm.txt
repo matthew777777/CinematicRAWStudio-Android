@@ -1,0 +1,50 @@
+Device=25080RABDG source=4080x2040 fps=30.0 frames=120
+Wall-clock stages include synchronization/readback; nested/concurrent stages are not additive. First two renders are warm-up.
+state before ungraded thermal=0 battery_tenths_c=378 process_pss_kb=26948
+playback ungraded warm=true native=false source_fps=30.0 scheduled=120 delivered=52 missed=68 last=110 max_delivery_gap_ms=202.506154 (headless delivery, not display presentation)
+decode.native count=65 mean=132.588 p95=191.842 max=256.262 ms
+raw_tools.native count=65 mean=0.001 p95=0.003 max=0.008 ms
+decode.shade_copy count=65 mean=46.536 p95=90.805 max=125.354 ms
+decode.playback_raw_tools count=65 mean=186.635 p95=257.261 max=318.002 ms
+rcd.ungraded_base_output count=52 mean=29.830 p95=66.204 max=100.215 ms
+output.ungraded_rgba_submit count=52 mean=1.023 p95=2.759 max=3.442 ms
+output.ungraded_rgba_wait count=52 mean=9.711 p95=26.256 max=45.607 ms
+state before default thermal=0 battery_tenths_c=378 process_pss_kb=262210
+playback default warm=true native=false source_fps=30.0 scheduled=120 delivered=32 missed=88 last=114 max_delivery_gap_ms=754.293769 (headless delivery, not display presentation)
+decode.native count=68 mean=120.321 p95=156.778 max=392.651 ms
+raw_tools.native count=68 mean=0.002 p95=0.005 max=0.007 ms
+decode.shade_copy count=68 mean=38.012 p95=62.514 max=159.906 ms
+decode.playback_raw_tools count=68 mean=164.858 p95=235.176 max=502.834 ms
+grade.prepare count=32 mean=0.480 p95=2.310 max=3.985 ms
+rcd.playback count=32 mean=22.925 p95=32.410 max=39.363 ms
+grade.playback_gpu_attempt_readback count=32 mean=88.261 p95=192.686 max=466.610 ms
+state before agx thermal=0 battery_tenths_c=378 process_pss_kb=620300
+playback agx warm=true native=false source_fps=30.0 scheduled=120 delivered=34 missed=86 last=110 max_delivery_gap_ms=490.828923 (headless delivery, not display presentation)
+decode.native count=82 mean=96.600 p95=141.910 max=171.989 ms
+raw_tools.native count=82 mean=0.002 p95=0.006 max=0.007 ms
+decode.shade_copy count=82 mean=31.135 p95=55.082 max=72.884 ms
+decode.playback_raw_tools count=82 mean=133.471 p95=184.285 max=212.904 ms
+grade.prepare count=34 mean=0.479 p95=0.942 max=7.524 ms
+rcd.playback count=34 mean=29.367 p95=67.763 max=85.831 ms
+grade.playback_gpu_attempt_readback count=34 mean=78.103 p95=252.141 max=260.028 ms
+state before aces thermal=0 battery_tenths_c=378 process_pss_kb=797596
+playback aces warm=true native=false source_fps=30.0 scheduled=120 delivered=22 missed=98 last=108 max_delivery_gap_ms=493.380692 (headless delivery, not display presentation)
+decode.native count=56 mean=132.827 p95=325.835 max=340.021 ms
+raw_tools.native count=56 mean=0.002 p95=0.006 max=0.013 ms
+decode.shade_copy count=56 mean=39.864 p95=85.898 max=136.270 ms
+decode.playback_raw_tools count=56 mean=179.392 p95=397.623 max=406.987 ms
+grade.prepare count=22 mean=0.407 p95=0.757 max=3.352 ms
+rcd.playback count=22 mean=45.262 p95=102.956 max=130.344 ms
+grade.playback_gpu_attempt_readback count=22 mean=122.881 p95=250.087 max=318.884 ms
+state before sharpen_cpu thermal=0 battery_tenths_c=378 process_pss_kb=967233
+playback sharpen_cpu warm=true native=false source_fps=30.0 scheduled=120 delivered=17 missed=103 last=106 max_delivery_gap_ms=640.677308 (headless delivery, not display presentation)
+decode.native count=30 mean=255.416 p95=455.801 max=466.323 ms
+raw_tools.native count=30 mean=0.001 p95=0.002 max=0.002 ms
+decode.shade_copy count=30 mean=149.479 p95=303.804 max=363.155 ms
+decode.playback_raw_tools count=30 mean=410.104 p95=717.334 max=756.164 ms
+grade.prepare count=17 mean=0.410 p95=3.981 max=3.981 ms
+rcd.playback count=17 mean=22.513 p95=47.732 max=47.732 ms
+grade.playback_gpu_attempt_readback count=17 mean=0.033 p95=0.105 max=0.105 ms
+grade.cpu_readback count=17 mean=203.230 p95=370.138 max=370.138 ms
+PASS: pipeline benchmark completed
+
