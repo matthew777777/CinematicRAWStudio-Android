@@ -6,7 +6,7 @@ opens saved sequences; CinemaDNG is a separate original-source conversion action
 ## Project engine
 
 `SequenceProject` is a versioned immutable model of source assets, tracks, clips,
-source ranges, timeline positions, linked camera audio, and per-clip MLV-App
+source ranges, timeline positions, linked camera audio, and per-clip versioned grade
 receipts. All times are integer microseconds; project frame rates are rational.
 Ends are exclusive. Editing validates source bounds, non-overlap on each track,
 and track/source compatibility before committing an edit.
@@ -26,8 +26,8 @@ missing source while keeping the clip's edit decisions, provided its range fits.
 ## Preview and video export
 
 `SequenceSchedule` resolves source frames and active audio spans. The monitor
-and exporter both use `ProjectFrameRenderer`; it runs the existing RawLens RCD
-and MLV-App grade, then fits the processed frame to the project/output canvas.
+and exporter both use `ProjectFrameRenderer`; it runs coherent MHC demosaic
+and RapidRAW grading, then fits the processed frame to the project/output canvas.
 The current single-take receipt is wrapped in this same model for video export.
 No grade is silently discarded when GPU processing is unavailable.
 

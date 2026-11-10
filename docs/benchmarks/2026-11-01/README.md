@@ -1,5 +1,8 @@
 # Initial pipeline baseline — 2026-11-01
 
+> Historical report: superseded by the current MHC/RapidRAW renderer. Removed-backend instructions, architecture and measurements below must not be used as current implementation or performance acceptance. See `docs/rcd-history-removal-2026-11-10.md`.
+
+
 Device: Xiaomi `25080RABDG`. Bayer source: 4080x2040, 30 fps.
 Release-optimized, unminified deviceTest build. This measures the old pipeline
 before replacing it. RCD, display transforms, and editing algorithms were not

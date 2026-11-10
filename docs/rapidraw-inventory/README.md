@@ -1,5 +1,8 @@
 # RapidRAW Android editor migration inventory
 
+> Historical report: superseded by the current MHC/RapidRAW renderer. Removed-backend instructions, architecture and measurements below must not be used as current implementation or performance acceptance. See `docs/rcd-history-removal-2026-11-10.md`.
+
+
 Source pin: **`f1d71a69eef813432db214f77969f567c41ff1d7`**,
 [CyberTimon/RapidRAW](https://github.com/CyberTimon/RapidRAW/tree/f1d71a69eef813432db214f77969f567c41ff1d7).
 This inventory describes that revision, not a moving upstream release.

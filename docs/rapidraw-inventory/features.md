@@ -1,5 +1,8 @@
 # Reviewed feature and UI matrix
 
+> Historical report: superseded by the current MHC/RapidRAW renderer. Removed-backend instructions, architecture and measurements below must not be used as current implementation or performance acceptance. See `docs/rcd-history-removal-2026-11-10.md`.
+
+
 Pin and generated parameter/control evidence: [inventory](README.md).
 All source paths below resolve under `third_party/rapidraw-reference` at the
 same frozen revision. Host file is `src-tauri/src/image_processing.rs` unless

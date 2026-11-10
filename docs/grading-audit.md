@@ -1,5 +1,8 @@
 # Grading audit — 2026-10-29
 
+> Historical report: superseded by the current MHC/RapidRAW renderer. Removed-backend instructions, architecture and measurements below must not be used as current implementation or performance acceptance. See `docs/rcd-history-removal-2026-11-10.md`.
+
+
 Compared CRS receipts, editor controls, JNI setters, Vulkan shader, and CPU
 fallback with MLV-App's `ReceiptSettings.h`, `MainWindow.cpp`, processing
 API, and image profiles. Our processing pin is c4357a3ab8a64f4feca4b05dbaba8981cdf9920a.

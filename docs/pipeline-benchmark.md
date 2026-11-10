@@ -1,5 +1,8 @@
 # Pipeline baseline and parity harness
 
+> Historical report: superseded by the current MHC/RapidRAW renderer. Removed-backend instructions, architecture and measurements below must not be used as current implementation or performance acceptance. See `docs/rcd-history-removal-2026-11-10.md`.
+
+
 `PipelineTiming` is disabled by default. Headless instrumentation enables it
 only during a benchmark and disables it in `finally`. Normal rendering uses the
 same algorithms. Native blob decode appends three diagnostic durations after

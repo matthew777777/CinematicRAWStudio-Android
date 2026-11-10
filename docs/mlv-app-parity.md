@@ -1,5 +1,8 @@
 > Historical checkpoint; superseded by the AI-free MHC/RapidRAW delivery in [rapidraw-engine.md](rapidraw-engine.md).
 
+> Historical report: superseded by the current MHC/RapidRAW renderer. Removed-backend instructions, architecture and measurements below must not be used as current implementation or performance acceptance. See `docs/rcd-history-removal-2026-11-10.md`.
+
+
 # MLV-App parity
 
 Grading and raw-stage tools are MLV-App's own code (`third_party/mlv-app`,

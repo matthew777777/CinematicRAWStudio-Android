@@ -1,5 +1,8 @@
 # Exposure translation map
 
+> Historical report: superseded by the current MHC/RapidRAW renderer. Removed-backend instructions, architecture and measurements below must not be used as current implementation or performance acceptance. See `docs/rcd-history-removal-2026-11-10.md`.
+
+
 Pinned upstream: `f1d71a69eef813432db214f77969f567c41ff1d7`.
 Path: `src-tauri/src/shaders/shader.wgsl`, lines 680–685,
 symbol `apply_linear_exposure`.

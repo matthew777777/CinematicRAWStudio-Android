@@ -1,0 +1,14 @@
+{
+  "apk": "app/build/outputs/apk/release/app-release.apk",
+  "sha256": "0fdcc27ebf50f4cc28a44ff29dbe7f18c47d702ac7228f9cbe9773c4dab4ee73",
+  "bytes": 25423057,
+  "removed_payload_paths": [],
+  "removed_payload_signatures": [],
+  "unit_tests": {
+    "tests": 19,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "device_tests_run": false
+}

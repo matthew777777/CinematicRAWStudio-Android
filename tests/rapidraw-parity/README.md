@@ -1,5 +1,8 @@
 # RapidRAW exposure parity
 
+> Historical report: superseded by the current MHC/RapidRAW renderer. Removed-backend instructions, architecture and measurements below must not be used as current implementation or performance acceptance. See `docs/rcd-history-removal-2026-11-10.md`.
+
+
 This is an isolated executable reference comparison, not a production grade.
 `run.py` extracts `apply_linear_exposure` unchanged from the hash-verified pinned
 WGSL, executes it, compiles `exposure.comp` to Vulkan 1.1 SPIR-V, and executes

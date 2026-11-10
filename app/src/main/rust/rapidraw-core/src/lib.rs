@@ -43,7 +43,7 @@ pub fn prepare(parameters: &str, is_raw: bool, temperature: f64, tint: f64,
 
 /// C ABI: write one packed AllAdjustments block; return negative error or byte length.
 /// Parameter JSON must already pass the versioned schema gate. Camera metadata
-/// is supplied explicitly so the CRAW/RCD adapter cannot silently use a guessed IDT.
+/// is supplied explicitly so the CRAW/MHC adapter cannot silently use a guessed IDT.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn crs_rapidraw_prepare(
     json: *const u8, length: usize, temperature: f64, tint: f64,
