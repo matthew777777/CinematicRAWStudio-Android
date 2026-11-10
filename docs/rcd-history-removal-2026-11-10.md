@@ -52,3 +52,26 @@ not guarantee purging old commit/blob caches, clones, forks, previously download
 APKs or user attachments. Verify those separately and prepare a support request
 for any GitHub-hosted old commit views still served. No ownership determination
 or legal-clearance claim is made. No issue/support message is automatically sent.
+
+## Completed remote verification
+
+The atomic SSH push succeeded. `main` was rewritten from `a20ada0` to
+`3b3cba2` (plus a documentation-only completion follow-up), including the
+previously local MHC/RapidRAW renderer. Tag `0.1.0` was rewritten from
+`8f5ed6f` to `6dbc76c`. A fresh mirror cloned from GitHub passed the same full
+reachable-object scan: no forbidden renderer/shader paths or checked RCD
+implementation signatures. The current source tree matched the pre-filter
+validated tree exactly. Upstream tracking now uses SSH.
+
+The original RCD-import commit API returned HTTP 404 without authentication
+when checked after the push. The withdrawn 0.1.0 release API also returned 404
+without authentication; authenticated inspection confirmed its private draft
+and retained `app-release.apk`. These point checks do not guarantee removal
+of every cached blob view, fork or previously downloaded copy.
+
+The private recovery files are in `/tmp/crs-rcd-removal-20261110`, outside the
+source repository. A support-request draft is available there if another
+GitHub-hosted historical copy is found. No external messages were sent and
+no replacement APK was publicly published. The new current-source release APK
+is a locally validated build candidate; production signature identity and
+upload remain a separate release step.

@@ -1,0 +1,10 @@
+{
+  "reachable_objects": 1239,
+  "forbidden_paths": [],
+  "removed_implementation_signatures": [],
+  "main_tree": "4497bfd916e89604592f28f0344054cbc43794ea",
+  "refs": [
+    "refs/heads/main 3b3cba26c92ccf24baddc1157aff6a46d558a2bc",
+    "refs/tags/0.1.0 6dbc76ce20b262a0d8eceef09d094cd2ce9ce9d6"
+  ]
+}
