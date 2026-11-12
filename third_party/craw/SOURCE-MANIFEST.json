@@ -1,7 +1,7 @@
 {
   "commits": {
-    "encoder": "96f41089f7b4e593dde513c593f8c7fc3cb27536",
-    "decoder + tools/common": "a0715ad8b34d53954b427834f466fa77073501e5"
+    "encoder": "9bc1f30f71fe45b19344033ecb58bb3cf5a6a399",
+    "decoder + tools/common": "cff9a90d7ce76daaa190652f9800495a0ce0905e"
   },
   "sha256": {
     "encoder/LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
@@ -20,8 +20,8 @@
     "decoder/src/Crc32c.h": "58e717808d586c93376e3ae542b742841bfa44461f4a5f5534252113dd271fc4",
     "decoder/src/Decoder.cpp": "43393a6d58eb0f255ac70484c8f91ae751fc9e9e2eb72b5b679b4def78a25d9f",
     "decoder/src/Reader.cpp": "b39a3383f26c7bfa0568bf96917679f71e50e10ce3989380f9478dd50757a4bb",
-    "decoder/tools/common/Clip.cpp": "6e5b0f044aae1ef84d69b602821332ef009380869d1cbb16c913744610375eaa",
-    "decoder/tools/common/Clip.h": "0a4d09bd21bc3ae10f4273e17039f5553057e3d3be67649f6344d8ade8cc8baa",
+    "decoder/tools/common/Clip.cpp": "728568eaa5a7b6a4f544182d60cf8aeabd2ebd0da43a23ac6c621453d43c01ae",
+    "decoder/tools/common/Clip.h": "85db83265a72ac10f85488f83d2a850e090680951260fd04d2dd7d9a6f486fcc",
     "decoder/tools/common/Json.h": "f6a5eddfac788193e00a28d3a9cac1f3772c665c7e4ba51f254154775f0df806",
     "decoder/tools/craw_compact.cpp": "b5f5064b2f2e44c47992049c14680d0e858c0e75a68fecb72d40d360db883e55"
   }

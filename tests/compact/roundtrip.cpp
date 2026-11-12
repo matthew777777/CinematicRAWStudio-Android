@@ -33,7 +33,7 @@ int main(){
     char root[]="/tmp/crs-compact-test-XXXXXX";check(mkdtemp(root)!=nullptr,"temp directory");const fs::path dir=root;
     try{
         int cases=0;
-        for(int bits:{10,12,16})for(int phase=0;phase<5;++phase){
+        for(int bits:{10,12,14,16})for(int phase=0;phase<5;++phase){
             const auto input=dir/("source-"+std::to_string(cases)+".craw"),output=dir/("compact-"+std::to_string(cases)+".craw");
             {
                 craw::Writer writer(input.string(),"{\"sensor\":{\"uniqueModel\":\"Fixture\"},\"preserve\":\"exact JSON bytes\",\"fps\":30}",2);
@@ -81,7 +81,7 @@ int main(){
         const auto recovered=dir/"recovered.craw",temporary=dir/"recovered-output.craw";fs::copy_file(left,recovered);fs::resize_file(recovered,fs::file_size(recovered)-16);
         {int a=open(recovered.c_str(),O_RDONLY),b=open(temporary.c_str(),O_RDWR|O_CREAT|O_EXCL,0600);bool rejected=false;
             try{auto bad=crs::compact::convert(a,b,1);}catch(const std::exception&){rejected=true;}check(rejected,"reject incomplete source");check(fs::file_size(temporary)==0,"do not write on recovery rejection");close(a);close(b);}
-        std::printf("PASS: %d lossless Compact cases (Bayer phases + RGB, 10/12/16-bit, codecs 1–4, audio/IMU/shading/opaque chunks, valid-CRC sample/audio mismatch, corruption, incomplete-source and overwrite rejection)\n",cases);
+        std::printf("PASS: %d lossless Compact cases (Bayer phases + RGB, 10/12/14/16-bit, codecs 1–4, audio/IMU/shading/opaque chunks, valid-CRC sample/audio mismatch, corruption, incomplete-source and overwrite rejection)\n",cases);
         fs::remove_all(dir);return 0;
     }catch(const std::exception&e){std::fprintf(stderr,"FAIL: %s\n",e.what());fs::remove_all(dir);return 1;}
 }
