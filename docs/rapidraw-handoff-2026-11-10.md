@@ -1,6 +1,6 @@
-# Current renderer handoff — 2026-11-10
+# Historical renderer handoff — 2026-11-10
 
-The earlier implementation checkpoint is superseded. The current tree uses
+The November 10 implementation used
 `RapidMhcSource` with the pinned coherent MHC reference, `RapidComputeSession`
 and the RapidRAW host for editor, project monitoring and export. The old
 RawLens renderer, wrappers, native backend, shader payloads and sync script

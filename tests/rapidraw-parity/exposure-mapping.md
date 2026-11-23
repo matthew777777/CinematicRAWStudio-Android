@@ -1,11 +1,6 @@
 # Exposure translation map
 
-> Historical report: superseded by the current MHC/RapidRAW renderer. Removed-backend instructions, architecture and measurements below must not be used as current implementation or performance acceptance. See `docs/rcd-history-removal-2026-11-10.md`.
-
-
-Pinned upstream: `f1d71a69eef813432db214f77969f567c41ff1d7`.
-Path: `src-tauri/src/shaders/shader.wgsl`, lines 680–685,
-symbol `apply_linear_exposure`.
+Pinned upstream commit `00379017cb14f3fc398e69fa14b33b60af07c588`, `src-tauri/src/shaders/shader.wgsl`, lines 801–806, symbol `apply_linear_exposure`.
 
 | Upstream operation | GLSL translation |
 |---|---|
@@ -26,5 +21,4 @@ only; exact float output bits determine pass/fail.
 
 The sample EV is already upstream's native exposure parameter. This test does
 not yet verify UI/receipt-to-EV mapping, scene-linear working-space adapters,
-RCD float16 import/export, or complete pipeline operation order. Such adapters
-must receive independent reference gates before production integration.
+or complete pipeline operation order. See the [engine guide](../../docs/rapidraw-engine.md) for coverage of the Android graph.

@@ -1,6 +1,8 @@
 # Cinematic RAW Studio — Android
 
-Native Android editing for .CRAW video: library, RapidRAW Vulkan grading, multi-track timeline/audio, and H.264 / HEVC / Main10 or original CinemaDNG export.
+Edit CRAW takes, grade with RapidRAW 1.7 on Vulkan, and build sequences with sound on Android. Export graded MP4, convert original takes to CinemaDNG/WAV, or archive them as lossless CRAW Compact.
+
+[GitHub releases](https://github.com/matthew777777/CinematicRAWStudio-Android/releases)
 
 ## Current processing pipeline
 
@@ -11,9 +13,7 @@ Native Android editing for .CRAW video: library, RapidRAW Vulkan grading, multi-
 
 The old MLV-App processing, CPU grading fallback, RCD backend and old editor controls have been removed. There is one new renderer for single-take editing, project monitoring and exports.
 
-## Toolset
-
-This delivery follows the requested **basic, AI-free Vulkan grading** scope:
+## Grading tools
 
 - Exposure, contrast, brightness, highlights/shadows, whites/blacks.
 - As-shot white balance with temperature/tint adjustments, saturation, vibrance and hue.
@@ -22,7 +22,8 @@ This delivery follows the requested **basic, AI-free Vulkan grading** scope:
 - Sharpening, clarity/dehaze/structure, GPU luma/chroma noise reduction and chromatic aberration adjustments.
 - Glow/halation/flare, vignette and grain.
 - Imported cube/3dl/Hald LUTs; geometric and brush local-adjustment masks.
-- Original RapidRAW output plus retained Filament AgX and ACES 2.0 outputs.
+- RapidRAW, Filament AgX and ACES 2.0 output transforms.
+- RGB histogram and luma waveform in the **Video scopes** menu. Double-tap a grading slider or its numeric readout to reset it.
 
 AI inference/models, generated patches, depth/normal-map effects, negative-film conversion and advanced geometry are outside this basic delivery. Imported grades with active unsupported tools fail explicitly rather than render an incomplete grade.
 
@@ -32,11 +33,11 @@ Play/pause, frame stepping and continuous scrubbing use the sequence scheduler. 
 
 Preview uses an explicitly labeled half-size Bayer proxy and a 64 MiB cache of graded frames. Cache keys contain the source frame and complete-grade fingerprint. Export uses full source resolution before fitting to the hardware encoder's output limits. Preview native resources are released while the export queue is active.
 
-Project version 2 stores complete RapidRAW grade envelopes. Version-1 grades are retained as opaque legacy JSON and require an explicit reset before rendering; their old slider values are never silently reinterpreted. Source takes are not changed. Original CinemaDNG/WAV conversion retains source samples and calibration.
+Project version 2 stores complete RapidRAW grade envelopes. Earlier RapidRAW envelopes load with their saved settings and render through 1.7, which can change the look. Projects that predate RapidRAW retain their old receipts and require an explicit grade reset. CinemaDNG/WAV conversion preserves source samples and calibration.
 
 ## Validation status
 
-See [docs/rapidraw-engine.md](docs/rapidraw-engine.md) and `docs/benchmarks/2026-11-10/` for the current local checks and their limits. Local tests cover timeline scheduling/persistence, parameter math, exact curve float bits, coherent MHC invariants, GPU frame-assembly identity and high-precision/P010 output.
+See the [engine and validation notes](docs/rapidraw-engine.md), [editor guide](docs/editor-ui.md), and [project/export guide](docs/projects-and-export.md).
 
 **Native 30 fps playback and export throughput have not been established for this replacement on Android hardware.** Earlier RCD/MLV performance results do not validate the new pipeline. Host synthetic timings include multiple test renders and must not be presented as playback/export fps.
 
@@ -51,12 +52,11 @@ A build requires the Android SDK, NDK 27.0.12077973, Rust/cargo and the Rust tar
 Requires the Android SDK and NDK 27 (`local.properties` with `sdk.dir`).
 
 ```sh
-./gradlew :app:assembleDebug          # debug build
+./gradlew :app:assembleDeviceTest     # unminified test build
 ./gradlew :app:assembleRelease        # release (R8, resource shrinking, -O3 native)
 ```
 
-The native build compiles MLV-App, the CRAW libraries and the Vulkan
-shaders. On a laptop it can saturate every core; to keep the machine
+The native build compiles the CRAW libraries and the Rust RapidRAW host. On a laptop it can saturate every core; to keep the machine
 usable:
 
 ```sh
@@ -116,7 +116,7 @@ The Android shell is Kotlin/Compose, source decoding is C++, and demosaic/gradin
 | OpenColorIO ACES 2.0 | Retained output-transform reference | BSD-3-Clause |
 | Google Filament AgX | Retained output transform | Apache-2.0 |
 
-App sources retain their notices. Bundled component licenses are available in About; distribution must comply with the included RapidRAW AGPL terms. No release has been published by this local migration.
+App sources retain their notices. Bundled component licenses are available in About; distribution must comply with the included RapidRAW AGPL terms.
 
 ## Mobile Vulkan grading
 

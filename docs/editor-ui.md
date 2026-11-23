@@ -1,40 +1,20 @@
 # Editor UI
 
-The shared theme follows RawLens's charcoal and sea-sand palette (`#070809`,
-`#121417`, `#DDC08D`). Numeric adjustment values and timecode use monospace.
-RapidRAW's compact/wide layout and focused tool panels inform the editor layout.
+The library opens a single take for grading or opens **Projects** for sequence editing. Both previews share the RapidRAW Vulkan grade controls.
 
-- Portrait keeps the preview above the timeline and adjustment panel.
-- Landscape centers the preview in the space to the left of a 240–300 dp
-  adjustment panel. A 36 dp single-row header and 60 dp timeline leave most
-  vertical space for the preview; the system status bar hides in landscape.
-  The toolbar has 16 dp end padding to keep the Edit button away from the edge.
-- Landscape tools use a bounded dropdown with previous/next tool buttons, so
-  the tool list does not extend past the screen edge.
-- The adjustment toggle hides the panel for a larger preview in either orientation.
-- Light, Color, Curves, Detail, Profile, RAW, and Lens expose the existing
-  processing controls. Undo/redo and reset operate on the current take's receipt.
-- Edits save per take, including on exit. Adjusting a playing take pauses playback.
-  Playback uses the existing preview pipeline; grades are visible on paused frames.
-- The timeline samples source frames, supports tap/drag seeking, announces its
-  frame range to accessibility services, and offers previous/next frame controls.
-  It is a single-take navigation timeline; sequence editing and trimming are future work.
-- Clip information includes audio/recovery status and playback resolution.
-- The library supports filename search, newest/name sorting, refresh, and folder
-  selection, with explicit empty and folder access error states.
+## Grade a take or clip
+
+- In the single-take editor, select a grading section in the adjustment panel. In a project, select a video clip and open **Grade** in the inspector.
+- Use Basic, Curves, Color, Details, Effects and Masks to adjust the grade. The preview shows the current grade on the displayed frame.
+- Tap the **Video scopes** icon at the top right of the preview or sequence monitor, then choose **RGB histogram**, **Luma waveform**, or **Off**. These scopes sample the displayed image at up to four updates per second. Their values describe the output after grading and the display transform.
+- Double-tap a grading slider or its numeric readout to restore its default. Tap the readout once to enter an exact value. Temperature and tint defaults apply zero offset to as-shot white balance.
+- Saved single-take grades follow their source into projects; project grades are stored per clip. The transport supports play/pause, scrubbing and frame stepping.
 
 ## Device review
 
-Build with `./gradlew :app:assembleRelease` and install with
-`adb install -r app/build/outputs/apk/release/app-release.apk`.
-Open a Bayer take from the selected folder (or Android's file picker), since
-Android scoped storage does not grant access to arbitrary `file://` paths.
+Build with `./gradlew :app:assembleRelease`. On a test device, use a matching signing key or a separate application ID. Open footage from the selected library folder or Android's file picker.
 
-Check portrait and landscape with the same take open: preview aspect ratio,
-side-panel placement, scroll access to all sliders, category switching, curve
-editing, timeline seeking, frame step, playback/pause, undo/redo, reset, saved
-edits after reopening, and returning to the library. Also check a binned RGB take:
-playback remains available and the UI explains that adjustments are unavailable.
+Exercise both orientations and both monitors with Bayer and recorded RGB takes. Check scope selection, scope updates on seeks and grade changes, numeric entry, reset of nonzero defaults, curve editing, and saved grades after reopening.
 
 ## Library layout update
 

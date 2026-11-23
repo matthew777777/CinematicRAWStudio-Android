@@ -1,8 +1,6 @@
-# RapidRAW basic Vulkan engine — 2026-11-10
+# RapidRAW 1.7 Vulkan engine
 
-## Approved scope
-
-The latest user instruction is basic, fast Vulkan grading with **no AI**. This supersedes the earlier full feature-clone plan and the stopped-work checkpoint. Retain playback/scrubbing, timeline/audio scheduling, export, Filament AgX and ACES 2.0. Replace RCD completely with the user's improved coherent MHC from RawLens.
+Cinematic RAW Studio 0.2.0 uses RapidRAW 1.7.0 for preview and delivery. The active snapshot is pinned under `third_party/rapidraw-1.7-reference` and verified by `tools/verify_rapidraw_reference.py`. The [README](../README.md) lists the Android toolset.
 
 ## Implementation
 
@@ -12,34 +10,20 @@ MHC uses the unchanged green pass from `vf_mhc_green.comp` and unchanged coheren
 
 MHC and RapidRAW share one wgpu device/queue. Bayer data is decoded into a CPU-accessible blob and uploaded once. Camera RGB remains on the GPU through dual-illuminant calibration and the grading graph. A recorded-RGB source adapter unpacks recorded camera-linear cells and uses the same new grade path.
 
-The 17-case synthetic suite covers default/exposure, tonal, detail/noise, glow/halation/flare, grain, monochrome, RapidRAW AgX, retained Filament/ACES outputs, wheels, curves, HSL, radial/brush masks and LUTs. Masks are rasterized only when their definitions/scale change; their adjustments execute in the compute graph. Imported LUTs use app-owned storage and the exact upstream parsers/sampling code.
+The synthetic suite covers default/exposure, tonal, detail/noise, glow/halation/flare, grain, monochrome, RapidRAW AgX, retained Filament/ACES outputs, wheels, curves, HSL, radial/brush masks and LUTs. Masks are rasterized only when their definitions/scale change; their adjustments execute in the compute graph. Imported LUTs use app-owned storage and the exact upstream parsers/sampling code.
 
 Preview now assembles tiles on the GPU and reads back once per frame. Main10 export assembles the unchanged high-precision RGB16F shader output on the GPU, then fits and converts it to limited-range BT.709 P010 on the GPU. Persistent output/readback buffers are reused. The remaining CPU operation is copying finished P010 words into the encoder's stride-aware Y/U/V views; RGB grading/conversion is not performed there. The plane helper handles U/V views whose final row limits do not cover the entire shared interleaved allocation.
 
 Single-take and timeline playback use `SequencePlayer`, its generation-based stale-frame suppression and mixed-audio master clock. Preview uses an explicitly labeled proxy and 64 MiB graded-frame cache. Full-resolution export does not use proxy frames. `releaseForExport` relinquishes native preview resources while queued exports run. Export settings and projects contain immutable complete RapidRAW grade snapshots.
 
-Projects are version 2. Version-1 grade JSON is preserved without an executable legacy engine and requires explicit reset before processing. Per-source grades and copied settings use separate RapidRAW storage. Original CinemaDNG/WAV export remains source-preserving.
+Projects are version 2. Earlier RapidRAW grade envelopes migrate with their saved values. Pre-RapidRAW project receipts are preserved and require a reset before grading. Per-source grades and copied settings use separate RapidRAW storage. Original CinemaDNG/WAV export remains source-preserving.
 
-## Verified locally
+## Mobile grading
 
-- Frozen reference and generated parameter/schema/renderer/MHC/mask checks.
-- Seven Rust core tests for scales, packed layout, WB, bypass, mask preparation and FFI validation.
-- Fifteen JVM tests for sequence operations, linked audio, complete grade/output persistence, opaque legacy migration/reset, and 13 executed upstream curve fixtures at exact float32 bits.
-- MHC measured-CFA sample preservation and flat-field preservation at exact binary16 bits in all four Bayer phases.
-- All 17 preview outputs are byte-identical before/after GPU frame assembly.
-- All 17 assembled RGB16F outputs match upstream CPU-readback output words exactly.
-- GPU P010 checks cover output size, finite high-precision input, MSB-aligned words and legal limited-range code bounds. Full pipeline reset restores the exact default frame.
+The renderer builds 1.7 tone-base, guided coefficients and scene statistics on demand and caches them for the source frame. Contrast can require scene statistics even when the local tone controls are neutral. The visible scopes run outside the grading graph on bounded samples of the displayed bitmap.
 
-Host GPU checks ran headlessly on Apple M1/Metal. Android builds compile the native Vulkan backend for both ARM ABIs. These are not Android display/cadence or real-video export throughput measurements.
+## Validation
 
-## Limits
+The 0.2.0 work passed 7 Rust core tests, Android JVM tests, and 96 Vulkan offline compiler jobs on Adreno A750, Mali-G615 and Mali-G720. On a Mali-G615 device, the optimized graph matched the equivalent eager RapidRAW 1.7 graph byte for byte across 54 RGBA8, RGBA16F and P010 fixture files. The fixture also checks measured CFA samples and flat fields in all four Bayer phases.
 
-No AI code/model/runtime or depth/normal-map effects are part of the active toolset. Negative-film conversion and advanced geometry are also excluded from this basic grading delivery. Unsupported imported adjustments report an explicit error and can be cleared with Reset all; no CPU/legacy fallback is used.
-
-The Android release/instrumentation APKs are local artifacts. This turn does not establish phone runtime acceptance, visual UI correctness, recorded-RGB image parity, native 30 fps playback, export fps, or complete CRAW-versus-LibRaw source-image identity. Earlier phone/RCD checkpoints and historical docs must not be used as evidence for those claims.
-
-The retained output-transform GLSL and frozen RapidRAW extracts remain separately auditable. Source math is preserved; no broad numeric tolerance was introduced to call a failing image-parity comparison a pass.
-
-## Local build artifact
-
-`app/build/outputs/apk/release/app-release.apk` (25,357,521 bytes). SHA-256: `51018c883ed65c0bb9203a21fbc06521bbabd406bb7a440cf1b937186d67f177`. Release, deviceTest and instrumentation APK builds succeeded together in one non-overlapping Gradle invocation. The APK contains ARM64/ARMv7 RapidRAW host and CRAW libraries, with no RCD/MLV shaders or old RawLens backend library. See `docs/benchmarks/2026-11-10/local-release-check.json`.
+The fixture covers synthetic grading and readback. Sustained real-footage playback, export throughput, and gesture validation on Android remain separate checks. Earlier renderer numbers are preserved in the [November benchmark](benchmarks/2026-11-23/rapidraw-mobile-vulkan.md).

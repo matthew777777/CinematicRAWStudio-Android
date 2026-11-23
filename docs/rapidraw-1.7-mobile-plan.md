@@ -1,6 +1,6 @@
 # RapidRAW 1.7 mobile migration and player UX
 
-Historical plan from 2026-11-16. The app now uses 1.7.0 as of 0.2.0. This is a staged migration, not a completed 1.7 renderer port or a measured 30 fps claim.
+> Archived November 16 planning notes. For the shipped 0.2.0 implementation and current verification, see the [RapidRAW 1.7 engine guide](rapidraw-engine.md). Descriptions below refer to the planning checkpoint.
 
 ## Source and contract
 

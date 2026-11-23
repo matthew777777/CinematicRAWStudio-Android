@@ -1,5 +1,7 @@
 # RapidRAW mobile Vulkan grading
 
+> This report benchmarks the predecessor pin. For the shipping 1.7 renderer and its parity checks, see the [engine guide](../../rapidraw-engine.md).
+
 The Android renderer now builds and caches guided textures on the first render that uses them. It checks the packed global and mask adjustments for clarity, structure, Centré, dehaze, shadows, blacks, highlights and whites. A fresh source frame has an empty cache. The generic shader checks the per-pixel adjustments, including when the specialized pipeline is still compiling.
 
 On frames whose grades bypass the guided graph, this removes 30 dispatches, 30 bind groups, five parameter buffers and one queue submission. At 1920×1080 the 14 avoided RGBA32F texture allocations have 190.3 MiB of logical texel storage, including 41.5 MiB for the four filter outputs. These figures are derived from the texture descriptors. Device memory residency was outside this measurement.

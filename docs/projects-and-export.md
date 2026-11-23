@@ -1,4 +1,4 @@
-# Projects and export — first milestone
+# Projects and export
 
 The existing single-take editor remains available. The library's Projects button
 opens saved sequences; CinemaDNG is a separate original-source conversion action.
@@ -43,10 +43,9 @@ RAW pipeline. Vulkan mode changes and processing are serialized across modes.
 MP4 delivery supports hardware H.264/HEVC **8-bit SDR** and HEVC Main10
 **10-bit SDR**, selectable
 resolution, bitrate presets/custom bitrate, and optional mixed AAC audio. Settings
-are checked against device codec capabilities. Main10 uses the retained native
-MLV-App processed RGB16 (or the native recorded-RGB developer output), with
-bilinear fitting and BT.709 conversion directly into the codec’s P010 planes.
-It never encodes the ARGB8 preview as a substitute for this precision. The actual
+are checked against device codec capabilities. Main10 fits RapidRAW's full-resolution RGBA16F grade on the GPU and
+converts it to limited-range BT.709 P010. The finished words are copied into
+the codec's stride-aware planes. The actual
 HEVC SPS must report 10-bit luma and chroma; an 8-bit fallback fails explicitly.
 Some hardware under-reports Main10, so configuration and bitstream verification
 are the final gates. HDR, ProRes, APV, and DNx export remain outside this milestone.
@@ -56,12 +55,6 @@ and cached per device/encoder/configuration. An MP4 edit list removes the measur
 priming and trailing padding from presentation, preserving all pre-roll media.
 The metadata rewrite preserves existing media/chunk offsets. Final output is
 staged and written to the newly selected document only after encoding succeeds.
-
-The APK reference informs codec/resolution/quality/job controls. MLV-App's export
-loop in `platform/qt/MainWindow.cpp` provides the processing-before-scaling and
-serial-rendering reference. This does **not** claim parity with MLV-App's 16-bit
-FFmpeg/intermediate export paths. Main10 uses the same 16-bit processed scratch
-as the preview’s pre-quantization stage; delivery is limited-range Rec.709 SDR.
 
 ## Export jobs
 
@@ -84,14 +77,11 @@ conversion.** Video export is the separate path for rendering the edited look.
 
 ## Adjustment controls
 
-RAW adjustment sliders use relative quarter-speed drags. Double-tap a slider to
-restore that control's receipt default (temperature returns to as-shot). Tap its
-numeric value for validated entry with OK/Cancel; exposure is entered in EV and
-gamma in displayed units. The same controls serve single clips and project grades.
+The sequence monitor includes the RGB histogram and luma waveform under **Video scopes**. The single-take editor and project inspector share [slider resets and numeric entry](editor-ui.md).
 
 ## Validation
 
-- `./gradlew :app:testDebugUnitTest`: rational/NTSC timing, exclusive cuts, linked
+- `./gradlew :app:testDeviceTestUnitTest`: rational/NTSC timing, exclusive cuts, linked
   trim/split/move, collision rejection, mute/solo/gains, JSON/receipt round-trip,
   PCM windows, and MP4 AAC edit metadata preserving media offsets.
 - `ProjectInstrumentation` on the connected device: real Bayer/RGB cuts, graded
@@ -106,8 +96,8 @@ gamma in displayed units. The same controls serve single clips and project grade
 - Test media is written to the app's `project-review` directory. Original footage
   is never modified by editing, export, or these checks.
 
-Latest headless device run passed H.264, HEVC 8-bit, and HEVC Main10 edited
+The archived first-milestone headless device run passed H.264, HEVC 8-bit, and HEVC Main10 edited
 sequences with mixed audio; independent ffprobe inspection reported Main 10 /
-`yuv420p10le`. Additional two-frame Main10 exports passed at 1280×720 and
+`yuv420p10le`. Additional two-frame Main10 exports in that checkpoint passed at 1280×720 and
 2040×1144 at 30 fps. Eleven JVM tests passed. These are short integration samples,
 not a long-duration export stress test. No activity was launched in that run.

@@ -1,6 +1,6 @@
 # RapidRAW Android editor migration inventory
 
-> Historical report: superseded by the current MHC/RapidRAW renderer. Removed-backend instructions, architecture and measurements below must not be used as current implementation or performance acceptance. See `docs/rcd-history-removal-2026-11-10.md`.
+> The generated inventory tracks upstream source. The Android [engine guide](../rapidraw-engine.md) describes the implemented subset.
 
 
 Source pin: **`00379017cb14f3fc398e69fa14b33b60af07c588`**,
@@ -36,28 +36,9 @@ not execution of React or proof of Android runtime availability. Buttons,
 canvas tools, menus, and interactions are reviewed in the matrix and frozen
 source. No newly ported UI or processing is claimed by creating this inventory.
 
-## Android UI structure to reproduce
+## Android UI reference
 
-Upstream [App.tsx:281](../../third_party/rapidraw-1.7-reference/src/App.tsx)
-selects three Android layouts using viewport dimensions in CSS pixels:
-
-| Layout | Source condition | Editor organization |
-|---|---|---|
-| Compact | Portrait, width below 600 | Canvas above an expandable/resizable bottom tool panel with mobile panel switcher |
-| Wide | Other Android viewports below width 1000 | Wide panel layout; retain accessible canvas and panel navigation |
-| Full | Width at least 1000 | Full panel arrangement, with configurable panel regions |
-
-The Compose port must reproduce the interaction hierarchy rather than equate
-CSS pixels with Android physical pixels. Validate portrait, landscape, tablet,
-font scaling, touch targets, and panel state across rotation. This is a source
-layout audit; the upstream APK was not rendered or exercised in this step.
-
-Panel IDs are `adjustments`, `ai`, `crop`, `export`, `masks`, `metadata`,
-`presets`, `folderTree`, and `tethering`. Definition in
-[AppProperties.tsx](../../third_party/rapidraw-1.7-reference/src/components/ui/AppProperties.tsx).
-Listing a panel ID does not prove it is available on every Android build.
-Tethering and service integrations are tracked as dependencies, not silently
-included in the Vulkan shader work or used to replace CRS project/export UI.
+The initial migration audited RapidRAW’s compact, wide and full editor layouts. The current Compose editor has its own portrait and landscape layouts and shares grading controls with the project inspector. See the [Android editor guide](../editor-ui.md).
 
 Adjustment section order is **Basic → Curves → Color → Details → Effects**.
 Color, Details, and Effects have independently collapsible/bypassable tools.

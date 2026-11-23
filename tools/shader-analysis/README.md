@@ -1,6 +1,6 @@
 # Android Vulkan shader analysis
 
-This entry point uses the configured [RawLens shader analyzer](../../../RawLens/tools/shader-analysis/README.md). Set `RAWLENS_ROOT` if the RawLens checkout is elsewhere. The licensed Qualcomm compiler stays in RawLens. The wrapper streams CRS SPIR-V into the existing Colima container and retains both vendors' JSON and input hashes.
+This entry point uses the configured analyzer in the sibling RawLens checkout at `tools/shader-analysis/README.md`. Set `RAWLENS_ROOT` if the RawLens checkout is elsewhere. The licensed Qualcomm compiler stays in RawLens. The wrapper streams CRS SPIR-V into the existing Colima container and retains both vendors' JSON and input hashes.
 
 ```sh
 colima start --profile rawlens-shaders
