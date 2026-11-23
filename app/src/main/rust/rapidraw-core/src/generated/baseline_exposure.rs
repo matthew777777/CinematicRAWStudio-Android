@@ -1,18 +1,19 @@
-// Generated from pinned RapidRAW; AGPL-3.0-or-later. Do not edit.
-
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RawExposure {
     pub scene_referred: bool,
-    pub dng_baseline: f32,
+    pub dng_baseline: Option<f32>,
     pub highlight_preservation: f32,
 }
 
 impl RawExposure {
     pub fn compensation(&self, options: BaselineOptions) -> f32 {
-        let baseline = options.baseline_exposure.map_or(0.0, |amount| {
-            let scene_referred = if self.scene_referred { amount } else { 0.0 };
-            scene_referred + self.dng_baseline
-        });
+        let baseline = options
+            .baseline_exposure
+            .map_or(0.0, |amount| match self.dng_baseline {
+                Some(dng_baseline) => dng_baseline,
+                None if self.scene_referred => amount,
+                None => 0.0,
+            });
         let highlight_preservation = if options.compensate_highlight_preservation {
             self.highlight_preservation
         } else {

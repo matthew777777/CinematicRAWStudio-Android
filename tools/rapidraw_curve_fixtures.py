@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
-    source = (ROOT / "third_party/rapidraw-reference/src/components/adjustments/Curves.tsx").read_text()
+    source = (ROOT / "third_party/rapidraw-1.7-reference/src/components/adjustments/Curves.tsx").read_text()
     function = source[source.index("function buildParametricPoints"):source.index("function getCurvePath")]
     javascript = function.replace("settings: ParametricCurveSettings", "settings").replace(": Array<Coord>", "")
     javascript = javascript.replace("(v: number, x: number): number", "(v, x)").replace("(v: number)", "(v)")
@@ -43,7 +43,7 @@ def main():
     points=json.loads(buffer.value)
     js.JSStringRelease(string);js.JSStringRelease(script);js.JSGlobalContextRelease(context)
     def bits(value): return struct.unpack('<I',struct.pack('<f',value))[0]
-    data=dict(commit="f1d71a69eef813432db214f77969f567c41ff1d7",symbol="buildParametricPoints",
+    data=dict(commit="00379017cb14f3fc398e69fa14b33b60af07c588",symbol="buildParametricPoints",
         source_sha256=hashlib.sha256(function.encode()).hexdigest(),cases=[dict(settings=settings,
             points=output,float32_bits=[[bits(p['x']),bits(p['y'])] for p in output]) for settings,output in zip(cases,points)])
     for target in [ROOT/'app/src/test/resources/rapidraw-parametric-curves.json',ROOT/'app/src/androidTest/assets/rapidraw-parametric-curves.json']:

@@ -41,7 +41,7 @@ def main():
     parser.add_argument("--prepare-only", action="store_true", help="Write inputs/shaders without accessing a host GPU")
     args = parser.parse_args()
     subprocess.run(["python3", str(ROOT / "tools/verify_rapidraw_reference.py")], check=True)
-    reference = ROOT / "third_party/rapidraw-reference"
+    reference = ROOT / "third_party/rapidraw-1.7-reference"
     manifest = json.loads((reference / "manifest.json").read_text())
     source = (reference / "src-tauri/src/shaders/shader.wgsl").read_text()
     function = extract_function(source, "apply_linear_exposure")

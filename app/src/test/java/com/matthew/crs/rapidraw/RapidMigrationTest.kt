@@ -5,6 +5,25 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class RapidMigrationTest {
+    @Test fun rapidRaw1GradeKeepsSavedValuesWhenUpgradedTo17() {
+        val grade = RapidDefaults.schema.defaults(RapidOutput.Aces2)
+            .withValue("exposure", 1.2)
+            .withValue("lensBlurMaxDepth", 100)
+        val legacy = JSONObject(grade.encode())
+            .put("version", 1)
+            .put("sourceCommit", "f1d71a69eef813432db214f77969f567c41ff1d7")
+        val parameters = legacy.getJSONObject("parameters")
+        parameters.keys().asSequence().filter {
+            it.startsWith("aiUpscale") || it.startsWith("motionBlur")
+        }.toList().forEach { parameters.remove(it) }
+
+        val migrated = RapidDefaults.schema.decode(legacy.toString())
+        assertEquals(RapidOutput.Aces2, migrated.output)
+        assertEquals(1.2, migrated.number("exposure"), 0.0)
+        assertEquals(100.0, migrated.number("lensBlurMaxDepth"), 0.0)
+        assertEquals(0.0, migrated.number("motionBlurAmount"), 0.0)
+        assertEquals(RapidSchema.VERSION, JSONObject(migrated.encode()).getInt("version"))
+    }
     private fun source() = SourceAsset(uri="content://fixture/take",name="take.craw",kind=AssetKind.CRAW,
         durationUs=10_000_000,width=1920,height=1080,frames=300,fps=30.0,hasAudio=true)
     @Test fun everyOutputAndAllParametersSurviveProjectPersistence() {

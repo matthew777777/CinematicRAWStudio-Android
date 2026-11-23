@@ -1,19 +1,10 @@
 {
-  "commit": "f1d71a69eef813432db214f77969f567c41ff1d7",
-  "sha256": "b333e1adeb5f92ebdb694b46e9c50c77de951ef177492053bdc33ca91cf24217",
-  "ranges": [
-    [
-      98,
-      780
-    ],
-    [
-      1251,
-      1264
-    ],
-    [
-      1342,
-      1398
-    ]
+  "commit": "00379017cb14f3fc398e69fa14b33b60af07c588",
+  "sha256": "3d4e32172949c7f4ecfdc7f1caa7a5fe3dc3fb7ab5024d2e71d6dc2de78eeb6a",
+  "upstream": [
+    "masks/generation.rs",
+    "masks/shapes.rs",
+    "masks/morphology.rs"
   ],
   "adapter": "Geometric/brush dispatch only; no AI methods"
 }

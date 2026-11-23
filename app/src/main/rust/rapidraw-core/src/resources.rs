@@ -26,6 +26,10 @@ impl RapidRenderer {
             ("lensBlur","lensBlurEnabled"),("fog","fogEnabled"),("relight","relightEnabled")] {
             if crate::image_processing::is_effect_enabled(&parameters,tool,key) {return Err(format!("{tool} is outside the basic Vulkan grading toolset; reset this adjustment"));}
         }
+        if parameters["aiUpscaleEnabled"].as_bool().unwrap_or(false)
+            || parameters["motionBlurAmount"].as_f64().unwrap_or(0.0) != 0.0 {
+            return Err("AI upscale and motion blur are outside the basic Vulkan grading toolset".into());
+        }
         if parameters["aiPatches"].as_array().is_some_and(|p|p.iter().any(|p|p["visible"].as_bool().unwrap_or(true))) {
             return Err("AI patches are outside the basic Vulkan grading toolset".into());
         }

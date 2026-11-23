@@ -4,8 +4,14 @@ use crs_rapidraw_core::{prepare,render::RapidRenderer,baseline_exposure::{RawExp
 use std::{path::PathBuf,time::Instant};
 
 fn main()->Result<(),String> {
-    let directory=std::env::args().nth(1).ok_or("Usage: render-fixture output-directory")?;
+    let mut args=std::env::args().skip(1);
+    let directory=args.next().ok_or("Usage: render-fixture output-directory [--benchmark-guided]")?;
     let directory=PathBuf::from(directory);std::fs::create_dir_all(&directory).map_err(|e|e.to_string())?;
+    match args.next().as_deref() {
+        Some("--benchmark-guided") if args.next().is_none() => return benchmark_guided(&directory),
+        Some(_) => return Err("Usage: render-fixture output-directory [--benchmark-guided]".into()),
+        None => {}
+    }
     let width=64u32;let height=32u32;
     let mut pixels=Vec::new();
     for y in 0..height {for x in 0..width {
@@ -61,7 +67,10 @@ fn main()->Result<(),String> {
     let mask=serde_json::json!({"id":"test","name":"Radial","visible":true,"invert":false,"opacity":100,
         "adjustments":{"exposure":0.8},"subMasks":[{"id":"radial","type":"radial","visible":true,"invert":false,"opacity":100,"mode":"additive",
         "parameters":{"centerX":32,"centerY":16,"radiusX":20,"radiusY":12,"rotation":0,"feather":0.5}}]});
-    cases.push(("mask-radial",serde_json::json!({"masks":[mask]})));
+    cases.push(("mask-radial",serde_json::json!({"masks":[mask.clone()]})));
+    let mut guided_mask = mask;
+    guided_mask["adjustments"] = serde_json::json!({"clarity": 35, "shadows": 25, "dehaze": 10});
+    cases.push(("mask-guided",serde_json::json!({"masks":[guided_mask]})));
     let brush=serde_json::json!({"id":"brush","name":"Brush","visible":true,"invert":false,"opacity":100,"adjustments":{"exposure":-0.8},
         "subMasks":[{"id":"brush1","type":"brush","visible":true,"invert":false,"opacity":100,"mode":"additive","parameters":{"lines":[{"tool":"brush","brushSize":16,"feather":0.5,"points":[{"x":12,"y":12},{"x":42,"y":20}]}]}}]});
     cases.push(("mask-brush",serde_json::json!({"masks":[brush]})));
@@ -94,6 +103,8 @@ fn main()->Result<(),String> {
         let ms=start.elapsed().as_secs_f64()*1000.0;
         println!("{name}: {ms:.2} ms; differing components {differing}");
         std::fs::write(directory.join(format!("{name}.rgba8")),&output).map_err(|e|e.to_string())?;
+        std::fs::write(directory.join(format!("{name}.rgba16f")),bytemuck::cast_slice(&precise)).map_err(|e|e.to_string())?;
+        std::fs::write(directory.join(format!("{name}.p010")),&p010).map_err(|e|e.to_string())?;
         results.push(serde_json::json!({"case":name,"milliseconds":ms,"differing_components":differing}));
     }
     renderer.configure(&defaults.to_string(),1.0,true)?;
@@ -102,4 +113,61 @@ fn main()->Result<(),String> {
     std::fs::write(directory.join("report.json"),serde_json::to_vec_pretty(&serde_json::json!({"adapter":renderer.adapter_name,"width":width,"height":height,
         "scope":"Independent graph bring-up on synthetic linear RGBA16F; not reference image parity or throughput acceptance","cases":results})).unwrap()).map_err(|e|e.to_string())?;
     Ok(())
+}
+
+fn benchmark_guided(directory: &std::path::Path) -> Result<(), String> {
+    const WIDTH: u32 = 1920;
+    const HEIGHT: u32 = 1080;
+    const WARMUP: usize = 8;
+    const SAMPLES: usize = 30;
+    let mut renderer = RapidRenderer::new(WIDTH, HEIGHT)?;
+    let mut pixels = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
+    for y in 0..HEIGHT {
+        for x in 0..WIDTH {
+            let r = x as f32 / (WIDTH - 1) as f32 * 2.0;
+            let g = y as f32 / (HEIGHT - 1) as f32;
+            let b = ((x ^ y) % 64) as f32 / 63.0;
+            pixels.extend([r, g, b, 1.0].map(|v| half::f16::from_f32(v).to_bits()));
+        }
+    }
+    let defaults: serde_json::Value =
+        serde_json::from_str(include_str!("../../../../assets/rapidraw/defaults.json"))
+            .map_err(|e| e.to_string())?;
+    let mut cases = Vec::new();
+    for (name, updates) in [
+        ("neutral", &[][..]),
+        ("exposure", &[("exposure", 0.75), ("saturation", 10.0)][..]),
+        ("tonal", &[("shadows", 30.0), ("highlights", -25.0)][..]),
+        ("detail", &[("clarity", 30.0), ("dehaze", 15.0)][..]),
+    ] {
+        let mut grade = defaults.clone();
+        for &(key, value) in updates {
+            grade[key] = value.into();
+        }
+        let grade = grade.to_string();
+        let mut packed = prepare(&grade, true, 6504.0, 0.0,
+            RawExposure::default(), BaselineOptions::default(), None)?;
+        packed.set_crs_output(1)?;
+        renderer.configure(&grade, 1.0, true)?;
+        let mut milliseconds = Vec::with_capacity(SAMPLES);
+        for frame in 0..WARMUP + SAMPLES {
+            pixels[0] = half::f16::from_f32(frame as f32 / 64.0).to_bits();
+            let start = Instant::now();
+            renderer.upload(&pixels, 1)?;
+            let output = renderer.render_configured8(packed)?;
+            let elapsed = start.elapsed().as_secs_f64() * 1000.0;
+            std::hint::black_box(output);
+            if frame >= WARMUP {
+                milliseconds.push(elapsed);
+            }
+        }
+        cases.push(serde_json::json!({ "case": name, "milliseconds": milliseconds }));
+    }
+    let report = serde_json::json!({
+        "adapter": renderer.adapter_name, "width": WIDTH, "height": HEIGHT, "warmup": WARMUP,
+        "scope": "Synthetic linear RGBA16F upload through synchronous graded RGBA8 readback",
+        "cases": cases,
+    });
+    std::fs::write(directory.join("guided-timings.json"), serde_json::to_vec_pretty(&report).unwrap())
+        .map_err(|e| e.to_string())
 }

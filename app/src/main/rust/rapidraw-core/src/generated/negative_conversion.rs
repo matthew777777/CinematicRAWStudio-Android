@@ -1,7 +1,7 @@
-// Generated from pinned RapidRAW; AGPL-3.0-or-later. Do not edit.
 use serde_json::Value;
+use crate::image_processing::is_effect_enabled;
 pub fn is_enabled(adjustments: &Value) -> bool {
-    crate::image_processing::is_effect_enabled(
+    is_effect_enabled(
         adjustments,
         "negativeConversion",
         "negativeConversionEnabled",

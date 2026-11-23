@@ -2,6 +2,8 @@
 // The generated modules are unchanged extracts of pinned RapidRAW host routines.
 #[path = "generated/image_processing.rs"]
 pub mod image_processing;
+#[path = "generated/color_space.rs"]
+mod color_space;
 #[path = "generated/white_balance.rs"]
 pub mod white_balance;
 #[path = "generated/baseline_exposure.rs"]
@@ -15,6 +17,12 @@ pub mod mask_generation;
 #[cfg(feature = "gpu")]
 #[path = "generated/renderer.rs"]
 pub mod renderer;
+#[cfg(feature = "gpu")]
+#[path = "generated/rapid_compute.rs"]
+mod rapid_compute;
+#[cfg(feature = "gpu")]
+#[path = "generated/rapid_light.rs"]
+mod rapid_light;
 #[cfg(feature = "gpu")]
 pub mod render;
 #[cfg(feature = "gpu")]
@@ -55,7 +63,7 @@ pub unsafe extern "C" fn crs_rapidraw_prepare(
     if json.is_null() || output.is_null() || capacity < size { return -1; }
     let Ok(text) = std::str::from_utf8(unsafe { std::slice::from_raw_parts(json, length) }) else { return -2; };
     let result = prepare(text, is_raw != 0, temperature, tint,
-        RawExposure { scene_referred: scene_referred != 0, dng_baseline, highlight_preservation },
+        RawExposure { scene_referred: scene_referred != 0, dng_baseline: dng_baseline.is_finite().then_some(dng_baseline), highlight_preservation },
         BaselineOptions { baseline_exposure: (baseline_enabled != 0).then_some(baseline_amount),
                           compensate_highlight_preservation: compensate_highlights != 0 },
         (tonemapper >= 0).then_some(tonemapper as u32));
@@ -96,16 +104,17 @@ mod tests {
     #[test] fn baseline_metadata_is_separate_from_user_exposure() {
         let v = defaults();
         let result = prepare(&v.to_string(), true, 6504.0, 0.0,
-            RawExposure { scene_referred: true, dng_baseline: 0.5, highlight_preservation: 0.25 },
+            RawExposure { scene_referred: true, dng_baseline: Some(0.5), highlight_preservation: 0.25 },
             BaselineOptions { baseline_exposure: Some(1.0), compensate_highlight_preservation: true }, None).unwrap();
-        assert_eq!(result.global.exposure, 1.75);
+        assert_eq!(result.global.exposure, 0.75);
     }
     #[test] fn wheels_and_calibration_use_upstream_divisors() {
         let mut v = defaults(); v["colorGrading"]["shadows"]["saturation"] = 50.into();
         v["colorGrading"]["balance"] = (-80).into();
         v["colorCalibration"]["redHue"] = 100.into();
         let result = run(&v);
-        assert_eq!(result.global.color_grading_shadows.saturation, 0.1);
+        let tint = result.global.color_grading_shadows;
+        assert!((tint.tint_a.hypot(tint.tint_b) - 0.05).abs() < 1e-6);
         assert_eq!(result.global.color_grading_balance, -0.4);
         assert_eq!(result.global.color_calibration.red_hue, 0.25);
     }

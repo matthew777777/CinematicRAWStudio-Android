@@ -16,7 +16,7 @@ internal fun copyJson(value: Any): Any = when(value) { is JSONObject -> JSONObje
 class RapidSchema(defaultsJson: String, schemaJson: String) {
     private val defaults = JSONObject(defaultsJson)
     private val schema = JSONObject(schemaJson)
-    init { require(schema.getString("sourceCommit") == SOURCE_COMMIT && schema.getString("engine") == "rapidraw" && schema.getInt("version") == 1) }
+    init { require(schema.getString("sourceCommit") == SOURCE_COMMIT && schema.getString("engine") == "rapidraw" && schema.getInt("version") == VERSION) }
     val keys: List<String> get() = defaults.keys().asSequence().toList()
     fun defaultValue(key: String): Any = copyJson(defaults.get(key))
     fun range(key: String): ParameterRange? = schema.getJSONObject("ranges").optJSONObject(key)?.let { ParameterRange(it.getDouble("min"),it.getDouble("max"),it.getDouble("step")) }
@@ -70,10 +70,30 @@ class RapidSchema(defaultsJson: String, schemaJson: String) {
     }
     fun decode(serialized: String): RapidRawGrade {
         val o = JSONObject(serialized)
-        require(o.getString("engine") == "rapidraw" && o.getInt("version") == 1 && o.getString("sourceCommit") == SOURCE_COMMIT) { "Unsupported grade engine or source version" }
-        return create(o.getJSONObject("parameters"),RapidOutput.valueOf(o.getString("output")))
+        require(o.getString("engine") == "rapidraw") { "Unsupported grade engine" }
+        val version = o.getInt("version")
+        val commit = o.getString("sourceCommit")
+        val parameters = o.getJSONObject("parameters")
+        when {
+            version == VERSION && commit == SOURCE_COMMIT -> Unit
+            version == 1 && commit == LEGACY_SOURCE_COMMIT ->
+                addedIn17.forEach { key ->
+                    if (!parameters.has(key)) parameters.put(key, defaultValue(key))
+                }
+            else -> throw IllegalArgumentException("Unsupported grade source version")
+        }
+        return create(parameters, RapidOutput.valueOf(o.getString("output")))
     }
-    companion object { const val SOURCE_COMMIT = "f1d71a69eef813432db214f77969f567c41ff1d7" }
+    companion object {
+        const val VERSION = 2
+        const val SOURCE_COMMIT = "00379017cb14f3fc398e69fa14b33b60af07c588"
+        private const val LEGACY_SOURCE_COMMIT = "f1d71a69eef813432db214f77969f567c41ff1d7"
+        private val addedIn17 = listOf(
+            "aiUpscaleDetail", "aiUpscaleEnabled", "motionBlurAmount", "motionBlurAngle",
+            "motionBlurDepth", "motionBlurDepthEnabled", "motionBlurDepthMap",
+            "motionBlurHighlights", "motionBlurLayer", "motionBlurType",
+        )
+    }
 }
 class RapidRawGrade internal constructor(private val schema: RapidSchema, private val json: String, val output: RapidOutput) {
     fun value(key: String): Any = copyJson(JSONObject(json).get(key))
@@ -103,7 +123,7 @@ class RapidRawGrade internal constructor(private val schema: RapidSchema, privat
         root.put("curves",curves); return schema.create(root,output)
     }
     fun reset(section: RapidSection): RapidRawGrade { var next = this; schema.sectionKeys(section).forEach { next = next.withValue(it,schema.defaultValue(it)) }; return next.resolveCurves() }
-    fun encode(): String = JSONObject().put("engine","rapidraw").put("version",1).put("sourceCommit",RapidSchema.SOURCE_COMMIT).put("output",output.name).put("parameters",JSONObject(json)).toString()
+    fun encode(): String = JSONObject().put("engine","rapidraw").put("version",RapidSchema.VERSION).put("sourceCommit",RapidSchema.SOURCE_COMMIT).put("output",output.name).put("parameters",JSONObject(json)).toString()
 }
 data class RapidGradeSnapshot(val encoded: String = RapidDefaults.schema.defaults().encode()) {
     init { RapidDefaults.schema.decode(encoded) }

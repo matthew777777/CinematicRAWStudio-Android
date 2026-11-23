@@ -10,7 +10,7 @@ import re
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
-REF = ROOT / "third_party/rapidraw-reference"
+REF = ROOT / "third_party/rapidraw-1.7-reference"
 OUT = ROOT / "docs/rapidraw-inventory"
 
 
@@ -129,7 +129,7 @@ def main():
     interface = definitions.index("export interface Adjustments {")
     block = balanced(definitions, definitions.index("{", interface))
     declared = re.findall(r"^  ([\wé]+)\??:", block, re.M)
-    host = sources["src-tauri/src/image_processing.rs"]
+    host = sources["src-tauri/src/render/uniforms.rs"]
     scale_start = host.index("const SCALES:")
     scales = dict((key, float(value)) for key, value in re.findall(r"([\wé]+):\s*([\d.]+)", balanced(host, host.index("{", scale_start))))
     initialization = {}

@@ -6,7 +6,7 @@ Native Android editing for .CRAW video: library, RapidRAW Vulkan grading, multi-
 
 1. CRAW decoding and recorded capture calibration.
 2. The exact coherent-green/chroma MHC routines copied from the local RawLens working tree, pinned by file hashes in `third_party/rawlens-mhc-reference/manifest.json`.
-3. Pinned RapidRAW host parameter preparation and Vulkan compute grading (`f1d71a69eef813432db214f77969f567c41ff1d7`).
+3. RapidRAW 1.7.0 host parameter preparation and Vulkan compute grading (`00379017cb14f3fc398e69fa14b33b60af07c588`). Existing grade files load with their saved parameters and render with the 1.7 algorithms.
 4. Preview frame assembly on the GPU; Main10 fitting/BT.709 P010 conversion on the GPU, followed by a bounded readback/copy into MediaCodec's planes.
 
 The old MLV-App processing, CPU grading fallback, RCD backend and old editor controls have been removed. There is one new renderer for single-take editing, project monitoring and exports.
@@ -117,3 +117,7 @@ The Android shell is Kotlin/Compose, source decoding is C++, and demosaic/gradin
 | Google Filament AgX | Retained output transform | Apache-2.0 |
 
 App sources retain their notices. Bundled component licenses are available in About; distribution must comply with the included RapidRAW AGPL terms. No release has been published by this local migration.
+
+## Mobile Vulkan grading
+
+Build and compare shaders with the [shader-analysis tools](tools/shader-analysis/README.md).

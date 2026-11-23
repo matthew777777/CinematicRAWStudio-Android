@@ -1,6 +1,4 @@
-// Generated from pinned RapidRAW; AGPL-3.0-or-later. Do not edit.
-
-use crate::image_processing::{PRIMARIES_SRGB, WP_D65, primaries_to_xyz_matrix};
+use crate::color_space::{PRIMARIES_SRGB, WP_D65, primaries_to_xyz_matrix};
 use glam::{DMat3, DVec3, Mat3};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

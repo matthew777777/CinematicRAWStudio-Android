@@ -1,0 +1,39 @@
+{
+  "fromCommit": "f1d71a69eef813432db214f77969f567c41ff1d7",
+  "toCommit": "00379017cb14f3fc398e69fa14b33b60af07c588",
+  "added": {
+    "aiUpscaleDetail": 30,
+    "aiUpscaleEnabled": false,
+    "motionBlurAmount": 0,
+    "motionBlurAngle": 0,
+    "motionBlurDepth": 50,
+    "motionBlurDepthEnabled": false,
+    "motionBlurDepthMap": null,
+    "motionBlurHighlights": 30,
+    "motionBlurLayer": "auto",
+    "motionBlurType": "linear"
+  },
+  "removed": {},
+  "changed": {
+    "lensBlurMaxDepth": {
+      "before": 100,
+      "after": 90
+    },
+    "lensBlurMaxFade": {
+      "before": 20,
+      "after": 10
+    },
+    "lensBlurMinDepth": {
+      "before": 20,
+      "after": 10
+    },
+    "lensBlurMinFade": {
+      "before": 20,
+      "after": 10
+    },
+    "relightAmbient": {
+      "before": 0,
+      "after": -50
+    }
+  }
+}

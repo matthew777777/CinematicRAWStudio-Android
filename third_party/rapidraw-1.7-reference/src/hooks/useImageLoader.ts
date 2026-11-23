@@ -1,0 +1,151 @@
+import { useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import i18n from 'i18next';
+import { adjustmentsFromMetadata, fetchImageDefaults } from '../utils/developDefaults';
+import { toast } from 'react-toastify';
+import { useEditorStore } from '../store/useEditorStore';
+import { useLibraryStore } from '../store/useLibraryStore';
+import { useSettingsStore } from '../store/useSettingsStore';
+import { Invokes } from '../types/invokes';
+
+export function notifyEmbeddedPreview(loadImageResult: any) {
+  if (loadImageResult?.is_embedded_preview) {
+    toast.warning(i18n.t('editor.toasts.embeddedPreview'), { toastId: 'embedded-preview' });
+  }
+}
+
+export function useImageLoader(cachedEditStateRef: React.RefObject<any>) {
+  const selectedImage = useEditorStore((s) => s.selectedImage);
+  const adjustments = useEditorStore((s) => s.adjustments);
+  const histogram = useEditorStore((s) => s.histogram);
+  const waveform = useEditorStore((s) => s.waveform);
+  const finalPreviewUrl = useEditorStore((s) => s.finalPreviewUrl);
+  const uncroppedAdjustedPreviewUrl = useEditorStore((s) => s.uncroppedAdjustedPreviewUrl);
+  const originalSize = useEditorStore((s) => s.originalSize);
+  const wgpuPhase = useEditorStore((s) => s.wgpuPhase);
+
+  const setEditor = useEditorStore((s) => s.setEditor);
+  const resetHistory = useEditorStore((s) => s.resetHistory);
+  const setLibrary = useLibraryStore((s) => s.setLibrary);
+  const appSettings = useSettingsStore((s) => s.appSettings);
+
+  const isWgpuActive = appSettings?.useWgpuRenderer !== false && selectedImage?.isReady && wgpuPhase === 'live';
+
+  const selectedPath = selectedImage?.path;
+  useEffect(() => {
+    useEditorStore.getState().setEditor({ imageDefaults: null });
+    if (!selectedPath) return;
+    let isCurrent = true;
+    fetchImageDefaults(selectedPath)
+      .then((imageDefaults) => {
+        if (isCurrent && useEditorStore.getState().selectedImage?.path === selectedPath) {
+          useEditorStore.getState().setEditor({ imageDefaults });
+        }
+      })
+      .catch((err) => console.error('Failed to load default adjustments:', err));
+    return () => {
+      isCurrent = false;
+    };
+  }, [selectedPath]);
+
+  useEffect(() => {
+    if (selectedImage && !selectedImage.isReady && selectedImage.path) {
+      let isEffectActive = true;
+
+      const loadMetadataEarly = async () => {
+        try {
+          useEditorStore.getState().patchesSentToBackend.clear();
+          await invoke('clear_session_caches').catch((e) => console.warn('Cache clear failed:', e));
+
+          const metadata: any = await invoke(Invokes.LoadMetadata, { path: selectedImage.path });
+          if (!isEffectActive) return;
+
+          const initialAdjusts = adjustmentsFromMetadata(metadata.adjustments);
+
+          setEditor({ adjustments: initialAdjusts });
+          resetHistory(initialAdjusts);
+        } catch (err) {
+          console.error('Failed to load metadata early:', err);
+        }
+      };
+
+      const loadFullImageData = async () => {
+        try {
+          const loadImageResult: any = await invoke(Invokes.LoadImage, { path: selectedImage.path });
+          if (!isEffectActive) return;
+
+          const { width, height } = loadImageResult;
+          setEditor({ originalSize: { width, height } });
+
+          setEditor((state) => {
+            if (state.selectedImage && state.selectedImage.path === selectedImage.path) {
+              return {
+                selectedImage: {
+                  ...state.selectedImage,
+                  asShotWhiteBalance: loadImageResult.as_shot_white_balance,
+                  exif: loadImageResult.exif,
+                  height: loadImageResult.height,
+                  isRaw: loadImageResult.is_raw,
+                  isReady: true,
+                  metadata: loadImageResult.metadata,
+                  width: loadImageResult.width,
+                },
+              };
+            }
+            return state;
+          });
+          notifyEmbeddedPreview(loadImageResult);
+        } catch (err) {
+          if (isEffectActive) {
+            console.error('Failed to load image:', err);
+            toast.error(`Failed to load image: ${err}`);
+            setEditor({ selectedImage: null });
+          }
+        } finally {
+          if (isEffectActive) {
+            setLibrary({ isViewLoading: false });
+          }
+        }
+      };
+
+      const loadAll = async () => {
+        await loadMetadataEarly();
+        if (isEffectActive) {
+          await loadFullImageData();
+        }
+      };
+
+      loadAll();
+
+      return () => {
+        isEffectActive = false;
+      };
+    }
+  }, [selectedImage?.path, selectedImage?.isReady, resetHistory, setEditor, setLibrary]);
+
+  useEffect(() => {
+    if (selectedImage?.path && selectedImage.isReady && (finalPreviewUrl || isWgpuActive)) {
+      cachedEditStateRef.current = {
+        adjustments,
+        histogram,
+        waveform,
+        finalPreviewUrl,
+        uncroppedPreviewUrl: uncroppedAdjustedPreviewUrl,
+        selectedImage,
+        originalSize,
+      };
+    } else {
+      cachedEditStateRef.current = null;
+    }
+  }, [
+    selectedImage,
+    adjustments,
+    histogram,
+    waveform,
+    finalPreviewUrl,
+    uncroppedAdjustedPreviewUrl,
+    originalSize,
+    isWgpuActive,
+    cachedEditStateRef,
+  ]);
+}

@@ -1,18 +1,11 @@
-// Generated pinned RapidRAW rasterization; AGPL-3.0-or-later.
+// Generated RapidRAW 1.7 rasterization; AGPL-3.0-or-later.
 use crate::mask_generation::{MaskDefinition,SubMask,SubMaskMode};
-use image::{DynamicImage,GrayImage,Luma};
+use image::{DynamicImage, Luma};
+use image::GrayImage;
 use rayon::prelude::*;
-use serde::{Deserialize,Serialize};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::f32::consts::PI;
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-#[serde(rename_all = "camelCase")]
-struct GrowFeatherParameters {
-    #[serde(default)]
-    grow: f32,
-    #[serde(default)]
-    feather: f32,
-}
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
@@ -53,19 +46,19 @@ impl Default for LinearMaskParameters {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct Point {
-    x: f64,
-    y: f64,
+pub struct Point {
+    pub x: f64,
+    pub y: f64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
-struct BrushLine {
-    tool: String,
-    brush_size: f32,
-    points: Vec<Point>,
+pub struct BrushLine {
+    pub tool: String,
+    pub brush_size: f32,
+    pub points: Vec<Point>,
     #[serde(default = "default_brush_feather")]
-    feather: f32,
+    pub feather: f32,
 }
 
 fn default_brush_feather() -> f32 {
@@ -100,159 +93,6 @@ fn default_line_flow() -> f32 {
 struct FlowMaskParameters {
     #[serde(default)]
     lines: Vec<FlowLine>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-struct ParametricMaskParameters {
-    target_x: f64,
-    target_y: f64,
-    #[serde(default = "default_tolerance")]
-    tolerance: f32,
-    #[serde(default)]
-    grow: f32,
-    #[serde(default)]
-    feather: f32,
-    #[serde(default)]
-    rotation: f32,
-    #[serde(default)]
-    flip_horizontal: bool,
-    #[serde(default)]
-    flip_vertical: bool,
-    #[serde(default)]
-    orientation_steps: u8,
-}
-
-fn default_tolerance() -> f32 {
-    20.0
-}
-
-impl Default for ParametricMaskParameters {
-    fn default() -> Self {
-        Self {
-            target_x: 0.0,
-            target_y: 0.0,
-            tolerance: default_tolerance(),
-            grow: 0.0,
-            feather: 35.0,
-            rotation: 0.0,
-            flip_horizontal: false,
-            flip_vertical: false,
-            orientation_steps: 0,
-        }
-    }
-}
-
-fn grayscale_dilate(image: &GrayImage, k: u8) -> GrayImage {
-    let (width, height) = image.dimensions();
-    if width == 0 || height == 0 {
-        return image.clone();
-    }
-    let w = width as usize;
-    let h = height as usize;
-    let r = k as i32;
-    let src = image.as_raw();
-
-    let mut temp = vec![0u8; w * h];
-    let mut out = vec![0u8; w * h];
-
-    temp.par_chunks_mut(w)
-        .zip(src.par_chunks(w))
-        .for_each(|(temp_row, src_row)| {
-            for (x, slot) in temp_row.iter_mut().enumerate() {
-                let mut max_val = 0;
-                let start = (x as i32 - r).max(0) as usize;
-                let end = (x as i32 + r).min((w - 1) as i32) as usize;
-                for &value in &src_row[start..=end] {
-                    max_val = max_val.max(value);
-                }
-                *slot = max_val;
-            }
-        });
-
-    let r = r as usize;
-    out.par_chunks_mut(w).enumerate().for_each(|(y, out_row)| {
-        let start = y.saturating_sub(r);
-        let end = (y + r).min(h - 1);
-        out_row.copy_from_slice(&temp[start * w..(start + 1) * w]);
-        for yi in (start + 1)..=end {
-            for (o, &t) in out_row.iter_mut().zip(&temp[yi * w..(yi + 1) * w]) {
-                *o = (*o).max(t);
-            }
-        }
-    });
-
-    GrayImage::from_raw(width, height, out).unwrap()
-}
-
-fn grayscale_erode(image: &GrayImage, k: u8) -> GrayImage {
-    let (width, height) = image.dimensions();
-    if width == 0 || height == 0 {
-        return image.clone();
-    }
-    let w = width as usize;
-    let h = height as usize;
-    let r = k as i32;
-    let src = image.as_raw();
-
-    let mut temp = vec![0u8; w * h];
-    let mut out = vec![0u8; w * h];
-
-    temp.par_chunks_mut(w)
-        .zip(src.par_chunks(w))
-        .for_each(|(temp_row, src_row)| {
-            for (x, slot) in temp_row.iter_mut().enumerate() {
-                let mut min_val = 255;
-                let start = (x as i32 - r).max(0) as usize;
-                let end = (x as i32 + r).min((w - 1) as i32) as usize;
-                for &value in &src_row[start..=end] {
-                    min_val = min_val.min(value);
-                }
-                *slot = min_val;
-            }
-        });
-
-    let r = r as usize;
-    out.par_chunks_mut(w).enumerate().for_each(|(y, out_row)| {
-        let start = y.saturating_sub(r);
-        let end = (y + r).min(h - 1);
-        out_row.copy_from_slice(&temp[start * w..(start + 1) * w]);
-        for yi in (start + 1)..=end {
-            for (o, &t) in out_row.iter_mut().zip(&temp[yi * w..(yi + 1) * w]) {
-                *o = (*o).min(t);
-            }
-        }
-    });
-
-    GrayImage::from_raw(width, height, out).unwrap()
-}
-
-fn apply_grow_and_feather(mask: &mut GrayImage, grow: f32, feather: f32, width: u32, height: u32) {
-    let base_dimension = width.min(height) as f32;
-
-    if grow.abs() > 0.01 {
-        const MAX_GROW_PERCENTAGE: f32 = 0.01;
-        let grow_pixels = (grow / 100.0) * base_dimension * MAX_GROW_PERCENTAGE;
-
-        let amount = grow_pixels.abs().round() as u8;
-
-        if amount > 0 {
-            if grow_pixels > 0.0 {
-                *mask = grayscale_dilate(mask, amount);
-            } else {
-                *mask = grayscale_erode(mask, amount);
-            }
-        }
-    }
-
-    if feather > 0.0 {
-        const MAX_FEATHER_SIGMA_PERCENTAGE: f32 = 0.005;
-        let sigma = (feather / 100.0) * base_dimension * MAX_FEATHER_SIGMA_PERCENTAGE;
-
-        if sigma > 0.01 {
-            *mask = imageproc::filter::gaussian_blur_f32(mask, sigma);
-        }
-    }
 }
 
 fn stroke_bounds(
@@ -453,7 +293,7 @@ fn render_stroke_layer_parallel(
     GrayImage::from_raw(bb_w, bb_h, out_pixels).unwrap()
 }
 
-fn generate_radial_bitmap(
+pub fn generate_radial_bitmap(
     params_value: &Value,
     width: u32,
     height: u32,
@@ -496,7 +336,7 @@ fn generate_radial_bitmap(
     mask
 }
 
-fn generate_linear_bitmap(
+pub fn generate_linear_bitmap(
     params_value: &Value,
     width: u32,
     height: u32,
@@ -550,7 +390,7 @@ fn generate_linear_bitmap(
     mask
 }
 
-fn generate_brush_bitmap(
+pub fn generate_brush_bitmap(
     params_value: &Value,
     width: u32,
     height: u32,
@@ -617,7 +457,7 @@ fn generate_brush_bitmap(
     final_mask
 }
 
-fn generate_flow_bitmap(
+pub fn generate_flow_bitmap(
     params_value: &Value,
     width: u32,
     height: u32,
@@ -687,8 +527,7 @@ fn generate_flow_bitmap(
 
     final_mask
 }
-
-fn for_each_mask_row(mask: &mut GrayImage, fill_row: impl Fn(u32, &mut [u8]) + Sync) {
+pub fn for_each_mask_row(mask: &mut GrayImage, fill_row: impl Fn(u32, &mut [u8]) + Sync) {
     let width = mask.width() as usize;
     if width == 0 {
         return;
@@ -701,8 +540,6 @@ fn for_each_mask_row(mask: &mut GrayImage, fill_row: impl Fn(u32, &mut [u8]) + S
 fn generate_all_bitmap(width: u32, height: u32) -> GrayImage {
     GrayImage::from_pixel(width, height, Luma([255]))
 }
-
-
 // Dispatch adapter: the Android basic toolset exposes geometric/brush masks only.
 fn generate_sub_mask_bitmap(sub_mask:&SubMask,width:u32,height:u32,scale:f32,crop_offset:(f32,f32),_warped_image:Option<&DynamicImage>)->Option<GrayImage> {
     if !sub_mask.visible {return None;}

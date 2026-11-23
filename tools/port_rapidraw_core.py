@@ -10,7 +10,7 @@ from pathlib import Path
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
-REF = ROOT / "third_party/rapidraw-reference/src-tauri/src"
+REF = ROOT / "third_party/rapidraw-1.7-reference/src-tauri/src"
 DEST = ROOT / "app/src/main/rust/rapidraw-core/src/generated"
 
 
@@ -18,44 +18,44 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
-    subprocess.run(["python3", str(ROOT / "tools/verify_rapidraw_reference.py")], check=True)
+    subprocess.run(["python3", str(ROOT / "tools/verify_rapidraw_reference.py"), "--reference", str(REF.parents[1])], check=True)
     files, mappings = {}, []
-    def extract(name, selections, header=""):
-        source = (REF / name).read_text()
-        chunks = []
-        for begin, end in selections:
-            start = source.index(begin)
-            finish = source.index(end, start) if end else len(source)
-            chunks.append(source[start:finish])
-            mappings.append(dict(upstream=name, first_line=source.count("\n", 0, start)+1,
-                                 last_line=source.count("\n", 0, finish), output=name))
-        files[name] = "// Generated from pinned RapidRAW; AGPL-3.0-or-later. Do not edit.\n" + header + "\n" + "\n".join(chunks)
-    extract("image_processing.rs", [
-        ("fn uses_baseline_exposure", "#[derive"),
-        ("#[derive(Serialize, Deserialize, Debug, Clone, Copy, Pod, Zeroable, Default)]\n#[repr(C)]\npub struct Point", "pub fn resolve_tonemapper_override"),
-        ("#[derive(Clone, Copy, Debug, Default, PartialEq)]\npub struct RenderOptions", "pub fn resolve_render_options"),
-        ("fn is_section_visible", "#[derive(Clone)]\npub struct GpuContext"),
-    ], """use crate::as_shot::AsShot;
-use crate::baseline_exposure::BaselineOptions;
-use crate::mask_generation::MaskDefinition;
-use crate::white_balance::{self, WhiteBalance};
-use bytemuck::{Pod, Zeroable};
-use glam::{Mat3, Vec2, Vec3};
-use serde::{Serialize, Deserialize};
-use serde_json::{Value, json};
-const BASELINE_EXPOSURE_KEY: &str = "baselineExposure";
-""")
-    extract("white_balance.rs", [("use crate::image_processing", None)])
-    extract("baseline_exposure.rs", [
-        ("#[derive(Clone, Copy, Debug, Default)]\npub struct RawExposure", "impl BaselineOptions"),
-    ])
-    extract("as_shot.rs", [("#[derive(Clone, Copy, Debug)]\npub struct AsShot", "fn as_shot_cache")],
-            "use crate::baseline_exposure::RawExposure;\nuse crate::white_balance::WhiteBalance;")
-    extract("negative_conversion.rs", [("pub fn is_enabled", "pub fn effective_is_raw")], "use serde_json::Value;")
-    source = (REF / "mask_generation.rs").read_text()
+    def take(path, begin, end=None):
+        source = (REF / path).read_text()
+        start = source.index(begin)
+        stop = source.index(end, start) if end else len(source)
+        mappings.append(dict(upstream=path, first_line=source.count("\n", 0, start)+1,
+                             last_line=source.count("\n", 0, stop)))
+        return source[start:stop]
+
+    uniforms = take("render/uniforms.rs", "use crate::decode")
+    uniforms = uniforms.replace("crate::decode::", "crate::").replace(
+        "crate::masks::generation", "crate::mask_generation").replace(
+        "crate::render::color_space", "crate::color_space").replace(
+        "crate::adjustments::negative_conversion", "crate::negative_conversion")
+    uniforms = "\n".join(line for line in uniforms.splitlines()
+                           if not line.startswith(("use crate::render::adjustment_utils",
+                                                   "use crate::render::options"))) + "\n"
+    options = take("render/options.rs", "#[derive(Clone, Copy, Debug, Default, PartialEq)]",
+                   "pub fn resolve_render_options")
+    adjustments = take("render/adjustment_utils.rs", "fn uses_baseline_exposure")
+    files["image_processing.rs"] = ("// Generated from RapidRAW 1.7, AGPL-3.0-or-later.\n"
+        "use crate::baseline_exposure::BaselineOptions;\nuse serde_json::{Value, json};\n"
+        'const BASELINE_EXPOSURE_KEY: &str = "baselineExposure";\n'
+        + uniforms + options + adjustments)
+    files["color_space.rs"] = take("render/color_space.rs", "use glam")
+    files["white_balance.rs"] = take("decode/white_balance.rs", "use crate").replace(
+        "crate::render::color_space", "crate::color_space")
+    files["baseline_exposure.rs"] = take("decode/baseline_exposure.rs",
+        "#[derive(Clone, Copy, Debug, Default)]\npub struct RawExposure", "impl BaselineOptions")
+    files["as_shot.rs"] = ("use crate::baseline_exposure::RawExposure;\nuse crate::white_balance::WhiteBalance;\n"
+        + take("decode/as_shot.rs", "#[derive(Clone, Copy, Debug)]\npub struct AsShot", "fn as_shot_cache"))
+    files["negative_conversion.rs"] = ("use serde_json::Value;\nuse crate::image_processing::is_effect_enabled;\n"
+        + take("adjustments/negative_conversion.rs", "pub fn is_enabled", "pub fn effective_is_raw"))
+    source = (REF / "masks/generation.rs").read_text()
     # Include the exact declarations and serde attributes; stop before behavior.
     start = source.index("#[derive", source.index("use "))
-    finish = source.index("impl MaskDefinition")
+    finish = source.index("#[derive", source.index("pub struct MaskDefinition"))
     files["mask_generation.rs"] = "// Generated from pinned RapidRAW; AGPL-3.0-or-later.\nuse serde_json::Value;\n" + source[start:finish]
     files['image_processing.rs']+='''
 // CRS output adapter: a previously unused padding word selects our retained
@@ -68,7 +68,7 @@ impl AllAdjustments {
     }
 }
 '''
-    mappings.append(dict(upstream="mask_generation.rs", first_line=source.count("\n",0,start)+1,
+    mappings.append(dict(upstream="masks/generation.rs", first_line=source.count("\n",0,start)+1,
                          last_line=source.count("\n",0,finish), output="mask_generation.rs"))
     for name, data in files.items():
         path = DEST / name
@@ -78,7 +78,7 @@ impl AllAdjustments {
         else:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(data)
-    manifest = dict(commit="f1d71a69eef813432db214f77969f567c41ff1d7", ranges=mappings,
+    manifest = dict(commit="00379017cb14f3fc398e69fa14b33b60af07c588", ranges=mappings,
                     adapters="Metadata is supplied by the caller. No decoder, file-service or UI code in core.")
     path = DEST.parent / "source-map.json"
     if args.check:

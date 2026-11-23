@@ -56,4 +56,4 @@ The gate is isolated function parity, not full texture/half-float pipeline parit
 full RapidRAW host preparation parity, or a playback/export performance claim.
 
 `exposure.comp` is derived from RapidRAW under AGPL-3.0; the upstream license is
-in `third_party/rapidraw-reference/LICENSE`. The app does not link this harness.
+in `third_party/rapidraw-1.7-reference/LICENSE`. The app does not link this harness.

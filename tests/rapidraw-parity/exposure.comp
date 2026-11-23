@@ -1,7 +1,7 @@
 #version 450
-// RapidRAW f1d71a69eef813432db214f77969f567c41ff1d7
+// RapidRAW 00379017cb14f3fc398e69fa14b33b60af07c588
 // shader.wgsl: apply_linear_exposure. Only type/constructor syntax changes.
-// Derived from RapidRAW, AGPL-3.0; see third_party/rapidraw-reference/LICENSE.
+// Derived from RapidRAW, AGPL-3.0; see third_party/rapidraw-1.7-reference/LICENSE.
 layout(local_size_x = 64) in;
 layout(set = 0, binding = 0, std430) readonly buffer Inputs { vec4 inputs[]; };
 layout(set = 0, binding = 1, std430) buffer Outputs { vec4 outputs[]; };

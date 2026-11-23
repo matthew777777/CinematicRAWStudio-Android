@@ -4,8 +4,8 @@
 
 
 Pin and generated parameter/control evidence: [inventory](README.md).
-All source paths below resolve under `third_party/rapidraw-reference` at the
-same frozen revision. Host file is `src-tauri/src/image_processing.rs` unless
+All source paths below resolve under `third_party/rapidraw-1.7-reference` at the
+same frozen revision. Host file is `src-tauri/src/render/uniforms.rs` unless
 another module is named; main shader is `src-tauri/src/shaders/shader.wgsl`.
 Widget bounds/defaults are in [controls](controls.md) and
 [parameters](parameters.md); dynamic expressions remain source expressions.

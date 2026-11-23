@@ -29,7 +29,7 @@ def main():
             raise RuntimeError(f"Command failed ({result.returncode}): {command}\n{result.stdout}")
         return result.stdout
     version = call([args.naga, "--version"]).strip()
-    lock = (ROOT / "third_party/rapidraw-reference/src-tauri/Cargo.lock").read_text()
+    lock = (ROOT / "third_party/rapidraw-1.7-reference/src-tauri/Cargo.lock").read_text()
     import re
     expected = re.search(r'name = "naga"\nversion = "([^"]+)"', lock).group(1)
     if version != expected:
@@ -80,7 +80,7 @@ def main():
                             mean_absolute=float(absolute.mean()), max_ulp=int(np.abs(ordered_bits(reference[:, :3]) - ordered_bits(port[:, :3])).max()),
                             zero_ev_bit_identity=identity, quantized_rgb16_max=int(qdiff.max()),
                             quantized_rgb16_unequal=int(np.count_nonzero(qdiff)), examples=examples))
-    manifest = json.loads((ROOT / "third_party/rapidraw-reference/manifest.json").read_text())
+    manifest = json.loads((ROOT / "third_party/rapidraw-1.7-reference/manifest.json").read_text())
     report = dict(commit=manifest["commit"], stage="apply_linear_exposure" if args.stage == "exposure" else "retained Filament AgX / OCIO ACES2", scope="Same-device Android Vulkan; isolated function only",
                   device=adb("shell", "getprop", "ro.product.model").strip(), driver=device_logs[0].strip(),
                   naga_version=version,

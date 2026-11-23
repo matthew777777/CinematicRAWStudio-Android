@@ -43,3 +43,11 @@ pub struct MaskDefinition {
     pub sub_masks: Vec<SubMask>,
 }
 
+impl MaskDefinition {
+    pub fn requires_warped_image(&self) -> bool {
+        self.sub_masks
+            .iter()
+            .any(|sm| matches!(sm.mask_type.as_str(), "color" | "luminance" | "match-brush"))
+    }
+}
+

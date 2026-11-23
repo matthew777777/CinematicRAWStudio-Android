@@ -3,8 +3,8 @@
 > Historical report: superseded by the current MHC/RapidRAW renderer. Removed-backend instructions, architecture and measurements below must not be used as current implementation or performance acceptance. See `docs/rcd-history-removal-2026-11-10.md`.
 
 
-Source pin: **`f1d71a69eef813432db214f77969f567c41ff1d7`**,
-[CyberTimon/RapidRAW](https://github.com/CyberTimon/RapidRAW/tree/f1d71a69eef813432db214f77969f567c41ff1d7).
+Source pin: **`00379017cb14f3fc398e69fa14b33b60af07c588`**,
+[CyberTimon/RapidRAW](https://github.com/CyberTimon/RapidRAW/tree/00379017cb14f3fc398e69fa14b33b60af07c588).
 This inventory describes that revision, not a moving upstream release.
 
 The frozen reference contains 232 hash-verified source/configuration files,
@@ -38,7 +38,7 @@ source. No newly ported UI or processing is claimed by creating this inventory.
 
 ## Android UI structure to reproduce
 
-Upstream [App.tsx:281](../../third_party/rapidraw-reference/src/App.tsx)
+Upstream [App.tsx:281](../../third_party/rapidraw-1.7-reference/src/App.tsx)
 selects three Android layouts using viewport dimensions in CSS pixels:
 
 | Layout | Source condition | Editor organization |
@@ -54,7 +54,7 @@ layout audit; the upstream APK was not rendered or exercised in this step.
 
 Panel IDs are `adjustments`, `ai`, `crop`, `export`, `masks`, `metadata`,
 `presets`, `folderTree`, and `tethering`. Definition in
-[AppProperties.tsx](../../third_party/rapidraw-reference/src/components/ui/AppProperties.tsx).
+[AppProperties.tsx](../../third_party/rapidraw-1.7-reference/src/components/ui/AppProperties.tsx).
 Listing a panel ID does not prove it is available on every Android build.
 Tethering and service integrations are tracked as dependencies, not silently
 included in the Vulkan shader work or used to replace CRS project/export UI.
@@ -65,14 +65,14 @@ The default tool layout hides `chromaticAberration` and `colorCalibration`;
 hidden does not mean absent from the feature inventory. Preserve custom section
 order, tool order/visibility, collapse state, reset, section copy/paste, and
 tool activation independently of parameter values. References:
-[adjustments.ts](../../third_party/rapidraw-reference/src/utils/adjustments.ts),
-[ControlsPanel.tsx](../../third_party/rapidraw-reference/src/components/panel/right/ControlsPanel.tsx),
-[EditorView.tsx](../../third_party/rapidraw-reference/src/components/views/EditorView.tsx).
+[adjustments.ts](../../third_party/rapidraw-1.7-reference/src/utils/adjustments.ts),
+[ControlsPanel.tsx](../../third_party/rapidraw-1.7-reference/src/components/panel/right/ControlsPanel.tsx),
+[EditorView.tsx](../../third_party/rapidraw-1.7-reference/src/components/views/EditorView.tsx).
 
 ## Parameter and parity traps
 
 1. **UI values are not shader values.** Rust `SCALES` and `get_val` in
-   [image_processing.rs](../../third_party/rapidraw-reference/src-tauri/src/image_processing.rs)
+   [image_processing.rs](../../third_party/rapidraw-1.7-reference/src-tauri/src/render/uniforms.rs)
    convert them and apply tool activation. Exposure uses scale **0.8**, and
    global exposure also adds baseline exposure. The completed isolated exposure
    test supplies the shader EV directly; it does not yet validate the UI mapping.

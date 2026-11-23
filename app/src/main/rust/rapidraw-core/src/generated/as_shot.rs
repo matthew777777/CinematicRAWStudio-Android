@@ -1,4 +1,3 @@
-// Generated from pinned RapidRAW; AGPL-3.0-or-later. Do not edit.
 use crate::baseline_exposure::RawExposure;
 use crate::white_balance::WhiteBalance;
 #[derive(Clone, Copy, Debug)]

@@ -1,7 +1,7 @@
 {
   "engine": "rapidraw",
-  "version": 1,
-  "sourceCommit": "f1d71a69eef813432db214f77969f567c41ff1d7",
+  "version": 2,
+  "sourceCommit": "00379017cb14f3fc398e69fa14b33b60af07c588",
   "sections": {
     "basic": [
       "brightness",
@@ -51,6 +51,8 @@
       "aiDenoiseMethod",
       "aiDenoiseAmount",
       "aiDenoiseDetail",
+      "aiUpscaleEnabled",
+      "aiUpscaleDetail",
       "chromaticAberrationRedCyan",
       "chromaticAberrationBlueYellow",
       "negativeConversionEnabled",
@@ -104,7 +106,14 @@
       "fogVariation",
       "fogGlow",
       "fogTemperature",
-      "fogTint"
+      "fogTint",
+      "motionBlurAmount",
+      "motionBlurAngle",
+      "motionBlurDepth",
+      "motionBlurDepthEnabled",
+      "motionBlurHighlights",
+      "motionBlurLayer",
+      "motionBlurType"
     ]
   },
   "ranges": {
@@ -114,7 +123,7 @@
       "step": 0.01,
       "source": {
         "path": "src/components/adjustments/Basic.tsx",
-        "line": 185
+        "line": 186
       }
     },
     "contrast": {
@@ -123,7 +132,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Basic.tsx",
-        "line": 204
+        "line": 206
       }
     },
     "highlights": {
@@ -132,7 +141,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Basic.tsx",
-        "line": 214
+        "line": 217
       }
     },
     "shadows": {
@@ -141,7 +150,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Basic.tsx",
-        "line": 224
+        "line": 228
       }
     },
     "whites": {
@@ -150,7 +159,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Basic.tsx",
-        "line": 234
+        "line": 239
       }
     },
     "blacks": {
@@ -159,7 +168,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Basic.tsx",
-        "line": 244
+        "line": 250
       }
     },
     "brightness": {
@@ -168,7 +177,7 @@
       "step": 0.01,
       "source": {
         "path": "src/components/adjustments/Basic.tsx",
-        "line": 254
+        "line": 261
       }
     },
     "sharpness": {
@@ -177,7 +186,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Details.tsx",
-        "line": 70
+        "line": 73
       }
     },
     "sharpnessThreshold": {
@@ -186,7 +195,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Details.tsx",
-        "line": 80
+        "line": 84
       }
     },
     "clarity": {
@@ -195,7 +204,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Details.tsx",
-        "line": 101
+        "line": 106
       }
     },
     "dehaze": {
@@ -204,7 +213,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Details.tsx",
-        "line": 111
+        "line": 117
       }
     },
     "structure": {
@@ -213,7 +222,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Details.tsx",
-        "line": 121
+        "line": 128
       }
     },
     "centré": {
@@ -222,7 +231,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Details.tsx",
-        "line": 136
+        "line": 144
       }
     },
     "aiDenoiseAmount": {
@@ -231,7 +240,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Details.tsx",
-        "line": 206
+        "line": 217
       }
     },
     "aiDenoiseDetail": {
@@ -240,7 +249,16 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Details.tsx",
-        "line": 219
+        "line": 231
+      }
+    },
+    "aiUpscaleDetail": {
+      "min": 0.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Details.tsx",
+        "line": 277
       }
     },
     "chromaticAberrationRedCyan": {
@@ -249,7 +267,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Details.tsx",
-        "line": 244
+        "line": 302
       }
     },
     "chromaticAberrationBlueYellow": {
@@ -258,7 +276,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Details.tsx",
-        "line": 253
+        "line": 312
       }
     },
     "negativeRedWeight": {
@@ -267,7 +285,7 @@
       "step": 0.01,
       "source": {
         "path": "src/components/adjustments/Details.tsx",
-        "line": 280
+        "line": 340
       }
     },
     "negativeGreenWeight": {
@@ -276,7 +294,7 @@
       "step": 0.01,
       "source": {
         "path": "src/components/adjustments/Details.tsx",
-        "line": 293
+        "line": 354
       }
     },
     "negativeBlueWeight": {
@@ -285,7 +303,7 @@
       "step": 0.01,
       "source": {
         "path": "src/components/adjustments/Details.tsx",
-        "line": 306
+        "line": 368
       }
     },
     "negativeExposure": {
@@ -294,7 +312,7 @@
       "step": 0.05,
       "source": {
         "path": "src/components/adjustments/Details.tsx",
-        "line": 319
+        "line": 382
       }
     },
     "negativeContrast": {
@@ -303,7 +321,7 @@
       "step": 0.05,
       "source": {
         "path": "src/components/adjustments/Details.tsx",
-        "line": 330
+        "line": 394
       }
     },
     "glowAmount": {
@@ -312,7 +330,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Effects.tsx",
-        "line": 396
+        "line": 471
       }
     },
     "halationAmount": {
@@ -321,7 +339,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Effects.tsx",
-        "line": 406
+        "line": 482
       }
     },
     "flareAmount": {
@@ -330,7 +348,43 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Effects.tsx",
-        "line": 419
+        "line": 496
+      }
+    },
+    "motionBlurAmount": {
+      "min": 0.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 519
+      }
+    },
+    "motionBlurAngle": {
+      "min": -90.0,
+      "max": 90.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 531
+      }
+    },
+    "motionBlurHighlights": {
+      "min": 0.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 544
+      }
+    },
+    "motionBlurDepth": {
+      "min": 0.0,
+      "max": 100.0,
+      "step": 1.0,
+      "source": {
+        "path": "src/components/adjustments/Effects.tsx",
+        "line": 619
       }
     },
     "lensBlurAmount": {
@@ -339,7 +393,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Effects.tsx",
-        "line": 466
+        "line": 659
       }
     },
     "lensBlurDiffusion": {
@@ -348,16 +402,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Effects.tsx",
-        "line": 480
-      }
-    },
-    "relightAmbient": {
-      "min": -100.0,
-      "max": 100.0,
-      "step": 1.0,
-      "source": {
-        "path": "src/components/adjustments/Effects.tsx",
-        "line": 555
+        "line": 674
       }
     },
     "relightSoftness": {
@@ -366,7 +411,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Effects.tsx",
-        "line": 567
+        "line": 766
       }
     },
     "relightShine": {
@@ -375,7 +420,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Effects.tsx",
-        "line": 581
+        "line": 781
       }
     },
     "relightShadowSoftness": {
@@ -384,7 +429,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Effects.tsx",
-        "line": 600
+        "line": 801
       }
     },
     "fogAmount": {
@@ -393,7 +438,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Effects.tsx",
-        "line": 836
+        "line": 1037
       }
     },
     "fogStart": {
@@ -402,7 +447,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Effects.tsx",
-        "line": 848
+        "line": 1067
       }
     },
     "fogDensity": {
@@ -411,7 +456,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Effects.tsx",
-        "line": 860
+        "line": 1080
       }
     },
     "fogHeight": {
@@ -420,7 +465,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Effects.tsx",
-        "line": 872
+        "line": 1093
       }
     },
     "fogVariation": {
@@ -429,7 +474,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Effects.tsx",
-        "line": 884
+        "line": 1106
       }
     },
     "fogGlow": {
@@ -438,7 +483,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Effects.tsx",
-        "line": 896
+        "line": 1119
       }
     },
     "fogTemperature": {
@@ -447,7 +492,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Effects.tsx",
-        "line": 908
+        "line": 1132
       }
     },
     "fogTint": {
@@ -456,7 +501,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Effects.tsx",
-        "line": 921
+        "line": 1146
       }
     },
     "vignetteAmount": {
@@ -465,7 +510,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Effects.tsx",
-        "line": 963
+        "line": 1189
       }
     },
     "vignetteMidpoint": {
@@ -474,7 +519,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Effects.tsx",
-        "line": 973
+        "line": 1200
       }
     },
     "vignetteRoundness": {
@@ -483,7 +528,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Effects.tsx",
-        "line": 984
+        "line": 1212
       }
     },
     "vignetteFeather": {
@@ -492,7 +537,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Effects.tsx",
-        "line": 993
+        "line": 1222
       }
     },
     "grainAmount": {
@@ -501,7 +546,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Effects.tsx",
-        "line": 1010
+        "line": 1240
       }
     },
     "grainSize": {
@@ -510,7 +555,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Effects.tsx",
-        "line": 1019
+        "line": 1250
       }
     },
     "grainRoughness": {
@@ -519,7 +564,7 @@
       "step": 1.0,
       "source": {
         "path": "src/components/adjustments/Effects.tsx",
-        "line": 1030
+        "line": 1262
       }
     }
   }

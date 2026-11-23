@@ -10,7 +10,7 @@
 Reference: CyberTimon/RapidRAW commit
 `f1d71a69eef813432db214f77969f567c41ff1d7`.
 The selected Rust host files and all WGSL shaders are copied unchanged into
-`third_party/rapidraw-reference`, with upstream AGPL-3.0 license and SHA-256
+the original snapshot (available in Git history), with upstream AGPL-3.0 license and SHA-256
 manifest. They are reference material only, not compiled or linked into the app.
 Run `python3 tools/verify_rapidraw_reference.py` to check their integrity.
 Licensing for distributed derived code must be resolved before enabling a port.

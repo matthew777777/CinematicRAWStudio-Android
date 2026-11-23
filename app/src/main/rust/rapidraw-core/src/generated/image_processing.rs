@@ -1,34 +1,14 @@
-// Generated from pinned RapidRAW; AGPL-3.0-or-later. Do not edit.
-use crate::as_shot::AsShot;
+// Generated from RapidRAW 1.7, AGPL-3.0-or-later.
 use crate::baseline_exposure::BaselineOptions;
-use crate::mask_generation::MaskDefinition;
-use crate::white_balance::{self, WhiteBalance};
-use bytemuck::{Pod, Zeroable};
-use glam::{Mat3, Vec2, Vec3};
-use serde::{Serialize, Deserialize};
 use serde_json::{Value, json};
 const BASELINE_EXPOSURE_KEY: &str = "baselineExposure";
-
-fn uses_baseline_exposure(adjustments: &Value) -> bool {
-    adjustments.is_null()
-        || adjustments
-            .get(BASELINE_EXPOSURE_KEY)
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-}
-
-pub fn effective_baseline_exposure(
-    adjustments: &Value,
-    as_shot: AsShot,
-    options: BaselineOptions,
-) -> f32 {
-    if uses_baseline_exposure(adjustments) {
-        as_shot.exposure.compensation(options)
-    } else {
-        0.0
-    }
-}
-
+use crate::as_shot::AsShot;
+use crate::white_balance::{self, WhiteBalance};
+use crate::mask_generation::MaskDefinition;
+use crate::color_space::calculate_agx_matrices_glam;
+use bytemuck::{Pod, Zeroable};
+use glam::{Mat3, Vec2, Vec3};
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Pod, Zeroable, Default)]
 #[repr(C)]
@@ -51,8 +31,8 @@ pub struct HslColor {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Pod, Zeroable, Default)]
 #[repr(C)]
 pub struct ColorGradeSettings {
-    pub hue: f32,
-    pub saturation: f32,
+    pub tint_a: f32,
+    pub tint_b: f32,
     pub luminance: f32,
     _pad: f32,
 }
@@ -144,7 +124,7 @@ pub struct GlobalAdjustments {
     pub chromatic_aberration_blue_yellow: f32,
     pub show_clipping: u32,
     pub is_raw_image: u32,
-    _pad_ca1: f32,
+    pub grain_softness: f32,
 
     pub has_lut: u32,
     pub lut_intensity: f32,
@@ -340,8 +320,8 @@ const SCALES: AdjustmentScales = AdjustmentScales {
     vignette_midpoint: 100.0,
     vignette_roundness: 100.0,
     vignette_feather: 100.0,
-    grain_amount: 200.0,
-    grain_size: 50.0,
+    grain_amount: 250.0,
+    grain_size: 60.0,
     grain_roughness: 100.0,
 
     chromatic_aberration: 10000.0,
@@ -350,8 +330,8 @@ const SCALES: AdjustmentScales = AdjustmentScales {
     hsl_saturation: 100.0,
     hsl_luminance: 100.0,
 
-    color_grading_saturation: 500.0,
-    color_grading_luminance: 500.0,
+    color_grading_saturation: 1000.0,
+    color_grading_luminance: 1000.0,
     color_grading_blending: 100.0,
     color_grading_balance: 200.0,
 
@@ -400,10 +380,12 @@ fn parse_color_grade_settings(js_cg: &serde_json::Value) -> ColorGradeSettings {
     if js_cg.is_null() {
         return ColorGradeSettings::default();
     }
+    let saturation = (js_cg["saturation"].as_f64().unwrap_or(0.0) as f32).clamp(0.0, 100.0);
+    let tint = oklab_hue_direction(js_cg["hue"].as_f64().unwrap_or(0.0) as f32)
+        * (saturation / SCALES.color_grading_saturation);
     ColorGradeSettings {
-        hue: js_cg["hue"].as_f64().unwrap_or(0.0) as f32,
-        saturation: js_cg["saturation"].as_f64().unwrap_or(0.0) as f32
-            / SCALES.color_grading_saturation,
+        tint_a: tint.x,
+        tint_b: tint.y,
         luminance: js_cg["luminance"].as_f64().unwrap_or(0.0) as f32
             / SCALES.color_grading_luminance,
         _pad: 0.0,
@@ -541,47 +523,6 @@ fn convert_points_to_aligned(frontend_points: Vec<serde_json::Value>) -> [Point;
     aligned_points
 }
 
-pub(crate) const WP_D65: Vec2 = Vec2::new(0.3127, 0.3290);
-pub(crate) const PRIMARIES_SRGB: [Vec2; 3] = [
-    Vec2::new(0.64, 0.33),
-    Vec2::new(0.30, 0.60),
-    Vec2::new(0.15, 0.06),
-];
-const PRIMARIES_REC2020: [Vec2; 3] = [
-    Vec2::new(0.708, 0.292),
-    Vec2::new(0.170, 0.797),
-    Vec2::new(0.131, 0.046),
-];
-
-fn xy_to_xyz(xy: Vec2) -> Vec3 {
-    if xy.y < 1e-6 {
-        Vec3::ZERO
-    } else {
-        Vec3::new(xy.x / xy.y, 1.0, (1.0 - xy.x - xy.y) / xy.y)
-    }
-}
-
-pub(crate) fn primaries_to_xyz_matrix(primaries: &[Vec2; 3], white_point: Vec2) -> Mat3 {
-    let r_xyz = xy_to_xyz(primaries[0]);
-    let g_xyz = xy_to_xyz(primaries[1]);
-    let b_xyz = xy_to_xyz(primaries[2]);
-    let primaries_matrix = Mat3::from_cols(r_xyz, g_xyz, b_xyz);
-    let white_point_xyz = xy_to_xyz(white_point);
-    let s = primaries_matrix.inverse() * white_point_xyz;
-    Mat3::from_cols(r_xyz * s.x, g_xyz * s.y, b_xyz * s.z)
-}
-
-fn rotate_and_scale_primary(primary: Vec2, white_point: Vec2, scale: f32, rotation: f32) -> Vec2 {
-    let p_rel = primary - white_point;
-    let p_scaled = p_rel * scale;
-    let (sin_r, cos_r) = rotation.sin_cos();
-    let p_rotated = Vec2::new(
-        p_scaled.x * cos_r - p_scaled.y * sin_r,
-        p_scaled.x * sin_r + p_scaled.y * cos_r,
-    );
-    white_point + p_rotated
-}
-
 fn mat3_to_gpu_mat3(m: Mat3) -> GpuMat3 {
     GpuMat3 {
         col0: [m.x_axis.x, m.x_axis.y, m.x_axis.z, 0.0],
@@ -590,132 +531,12 @@ fn mat3_to_gpu_mat3(m: Mat3) -> GpuMat3 {
     }
 }
 
-fn calculate_agx_matrices_glam() -> (Mat3, Mat3) {
-    let pipe_work_profile_to_xyz = primaries_to_xyz_matrix(&PRIMARIES_SRGB, WP_D65);
-    let base_profile_to_xyz = primaries_to_xyz_matrix(&PRIMARIES_REC2020, WP_D65);
-    let xyz_to_base_profile = base_profile_to_xyz.inverse();
-    let pipe_to_base = xyz_to_base_profile * pipe_work_profile_to_xyz;
-
-    let inset = [0.294_624_5, 0.25861925, 0.14641371];
-    let rotation = [0.03540329, -0.02108586, -0.06305724];
-    let outset = [0.290_776_4, 0.263_155_4, 0.045_810_72];
-    let unrotation = [0.03540329, -0.02108586, -0.06305724];
-    let master_outset_ratio = 1.0;
-    let master_unrotation_ratio = 0.0;
-
-    let mut inset_and_rotated_primaries = [Vec2::ZERO; 3];
-    for i in 0..3 {
-        inset_and_rotated_primaries[i] =
-            rotate_and_scale_primary(PRIMARIES_REC2020[i], WP_D65, 1.0 - inset[i], rotation[i]);
-    }
-    let rendering_to_xyz = primaries_to_xyz_matrix(&inset_and_rotated_primaries, WP_D65);
-    let base_to_rendering = xyz_to_base_profile * rendering_to_xyz;
-
-    let mut outset_and_unrotated_primaries = [Vec2::ZERO; 3];
-    for i in 0..3 {
-        outset_and_unrotated_primaries[i] = rotate_and_scale_primary(
-            PRIMARIES_REC2020[i],
-            WP_D65,
-            1.0 - master_outset_ratio * outset[i],
-            master_unrotation_ratio * unrotation[i],
-        );
-    }
-    let outset_to_xyz = primaries_to_xyz_matrix(&outset_and_unrotated_primaries, WP_D65);
-    let temp_matrix = xyz_to_base_profile * outset_to_xyz;
-    let rendering_to_base = temp_matrix.inverse();
-
-    let pipe_to_rendering = base_to_rendering * pipe_to_base;
-    let rendering_to_pipe = pipe_to_base.inverse() * rendering_to_base;
-
-    (pipe_to_rendering, rendering_to_pipe)
-}
-
 fn calculate_agx_matrices() -> (GpuMat3, GpuMat3) {
     let (pipe_to_rendering, rendering_to_pipe) = calculate_agx_matrices_glam();
     (
         mat3_to_gpu_mat3(pipe_to_rendering),
         mat3_to_gpu_mat3(rendering_to_pipe),
     )
-}
-
-
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct RenderOptions {
-    pub tonemapper_override: Option<u32>,
-    pub non_raw_tonemapper_override: Option<u32>,
-    pub baseline: BaselineOptions,
-}
-
-
-fn is_section_visible(adjustments: &serde_json::Value, section: &str) -> bool {
-    adjustments
-        .get("sectionVisibility")
-        .and_then(|v| v.get(section))
-        .and_then(|s| s.as_bool())
-        .unwrap_or(true)
-}
-
-const LEGACY_SECTION_TOOLS: &[(&str, &[&str])] = &[
-    ("basic", &["basic"]),
-    ("curves", &["curves"]),
-    (
-        "color",
-        &[
-            "whiteBalance",
-            "colorPresence",
-            "hue",
-            "colorGrading",
-            "colorMixer",
-            "colorCalibration",
-        ],
-    ),
-    (
-        "details",
-        &[
-            "sharpening",
-            "presence",
-            "noiseReduction",
-            "chromaticAberration",
-            "negativeConversion",
-        ],
-    ),
-    (
-        "effects",
-        &[
-            "creative", "lensBlur", "relight", "fog", "lut", "vignette", "grain",
-        ],
-    ),
-];
-
-pub fn is_tool_active(adjustments: &serde_json::Value, tool: &str) -> bool {
-    match adjustments.get("activeTools") {
-        Some(active_tools) => active_tools
-            .get(tool)
-            .and_then(|active| active.as_bool())
-            .unwrap_or(true),
-        None => LEGACY_SECTION_TOOLS
-            .iter()
-            .find(|(_, tools)| tools.contains(&tool))
-            .is_none_or(|(section, _)| is_section_visible(adjustments, section)),
-    }
-}
-
-pub fn active_tools(adjustments: &serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
-    match adjustments
-        .get("activeTools")
-        .and_then(|tools| tools.as_object())
-    {
-        Some(active_tools) => active_tools.clone(),
-        None => LEGACY_SECTION_TOOLS
-            .iter()
-            .flat_map(|(_, tools)| tools.iter())
-            .map(|tool| (tool.to_string(), json!(is_tool_active(adjustments, tool))))
-            .collect(),
-    }
-}
-
-pub fn is_effect_enabled(adjustments: &serde_json::Value, tool: &str, enabled_key: &str) -> bool {
-    adjustments[enabled_key].as_bool().unwrap_or(false) && is_tool_active(adjustments, tool)
 }
 
 fn get_global_adjustments_from_json(
@@ -850,6 +671,9 @@ fn get_global_adjustments_from_json(
         (0, 1.0, 0)
     };
 
+    let grain_amount = get_val("grain", "grainAmount", SCALES.grain_amount, None);
+    let grain_size = 0.243 * get_val("grain", "grainSize", SCALES.grain_size, Some(25.0)).exp2();
+
     GlobalAdjustments {
         exposure: get_val("basic", "exposure", SCALES.exposure, None) + baseline_exposure,
         brightness: get_val("basic", "brightness", SCALES.brightness, None),
@@ -917,8 +741,8 @@ fn get_global_adjustments_from_json(
             SCALES.vignette_feather,
             Some(50.0),
         ),
-        grain_amount: get_val("grain", "grainAmount", SCALES.grain_amount, None),
-        grain_size: get_val("grain", "grainSize", SCALES.grain_size, Some(25.0)),
+        grain_amount,
+        grain_size,
         grain_roughness: get_val(
             "grain",
             "grainRoughness",
@@ -944,7 +768,7 @@ fn get_global_adjustments_from_json(
             0
         },
         is_raw_image: if is_raw { 1 } else { 0 },
-        _pad_ca1: 0.0,
+        grain_softness: (grain_amount * 3.75).min(1.0) * grain_size.min(1.0) * 0.75,
 
         has_lut,
         lut_intensity,
@@ -1199,23 +1023,24 @@ pub fn get_all_adjustments_from_json(
     as_shot: AsShot,
     render: RenderOptions,
 ) -> AllAdjustments {
-    let (is_raw, as_shot, render) = if crate::negative_conversion::is_enabled(js_adjustments) {
-        let exposure = AsShot::reference().exposure;
-        let tonemapper_override = render.non_raw_tonemapper_override;
-        (
-            false,
-            AsShot {
-                exposure,
-                ..as_shot
-            },
-            RenderOptions {
-                tonemapper_override,
-                ..render
-            },
-        )
-    } else {
-        (is_raw, as_shot, render)
-    };
+    let (is_raw, as_shot, render) =
+        if crate::negative_conversion::is_enabled(js_adjustments) {
+            let exposure = AsShot::reference().exposure;
+            let tonemapper_override = render.non_raw_tonemapper_override;
+            (
+                false,
+                AsShot {
+                    exposure,
+                    ..as_shot
+                },
+                RenderOptions {
+                    tonemapper_override,
+                    ..render
+                },
+            )
+        } else {
+            (is_raw, as_shot, render)
+        };
     let target_white_balance = if is_tool_active(js_adjustments, "whiteBalance") {
         white_balance::from_adjustments(js_adjustments, as_shot.white_balance)
     } else {
@@ -1256,7 +1081,111 @@ pub fn get_all_adjustments_from_json(
         mask_atlas_cols: 1,
     }
 }
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct RenderOptions {
+    pub tonemapper_override: Option<u32>,
+    pub non_raw_tonemapper_override: Option<u32>,
+    pub baseline: BaselineOptions,
+}
 
+fn uses_baseline_exposure(adjustments: &Value) -> bool {
+    adjustments.is_null()
+        || adjustments
+            .get(BASELINE_EXPOSURE_KEY)
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+}
+
+pub fn effective_baseline_exposure(
+    adjustments: &Value,
+    as_shot: AsShot,
+    options: BaselineOptions,
+) -> f32 {
+    if uses_baseline_exposure(adjustments) {
+        as_shot.exposure.compensation(options)
+    } else {
+        0.0
+    }
+}
+
+fn is_section_visible(adjustments: &serde_json::Value, section: &str) -> bool {
+    adjustments
+        .get("sectionVisibility")
+        .and_then(|v| v.get(section))
+        .and_then(|s| s.as_bool())
+        .unwrap_or(true)
+}
+
+const LEGACY_SECTION_TOOLS: &[(&str, &[&str])] = &[
+    ("basic", &["basic"]),
+    ("curves", &["curves"]),
+    (
+        "color",
+        &[
+            "whiteBalance",
+            "colorPresence",
+            "hue",
+            "colorGrading",
+            "colorMixer",
+            "colorCalibration",
+        ],
+    ),
+    (
+        "details",
+        &[
+            "sharpening",
+            "presence",
+            "noiseReduction",
+            "superResolution",
+            "chromaticAberration",
+            "negativeConversion",
+        ],
+    ),
+    (
+        "effects",
+        &[
+            "creative",
+            "motionBlur",
+            "lensBlur",
+            "relight",
+            "fog",
+            "lut",
+            "vignette",
+            "grain",
+        ],
+    ),
+];
+
+pub fn is_tool_active(adjustments: &serde_json::Value, tool: &str) -> bool {
+    match adjustments.get("activeTools") {
+        Some(active_tools) => active_tools
+            .get(tool)
+            .and_then(|active| active.as_bool())
+            .unwrap_or(true),
+        None => LEGACY_SECTION_TOOLS
+            .iter()
+            .find(|(_, tools)| tools.contains(&tool))
+            .is_none_or(|(section, _)| is_section_visible(adjustments, section)),
+    }
+}
+
+pub fn active_tools(adjustments: &serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
+    match adjustments
+        .get("activeTools")
+        .and_then(|tools| tools.as_object())
+    {
+        Some(active_tools) => active_tools.clone(),
+        None => LEGACY_SECTION_TOOLS
+            .iter()
+            .flat_map(|(_, tools)| tools.iter())
+            .map(|tool| (tool.to_string(), json!(is_tool_active(adjustments, tool))))
+            .collect(),
+    }
+}
+
+pub fn is_effect_enabled(adjustments: &serde_json::Value, tool: &str, enabled_key: &str) -> bool {
+    adjustments[enabled_key].as_bool().unwrap_or(false) && is_tool_active(adjustments, tool)
+}
 
 // CRS output adapter: a previously unused padding word selects our retained
 // transforms at RapidRAW's scene-linear output boundary. Zero is upstream.

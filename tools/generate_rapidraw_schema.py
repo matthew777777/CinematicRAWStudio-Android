@@ -14,7 +14,7 @@ def main():
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     subprocess.run(["python3", str(ROOT / "tools/verify_rapidraw_reference.py")], check=True)
-    reference = ROOT / "third_party/rapidraw-reference"
+    reference = ROOT / "third_party/rapidraw-1.7-reference"
     catalog = json.loads((ROOT / "docs/rapidraw-inventory/catalog.json").read_text())
     default_bytes = (reference / "src/utils/defaultAdjustments.json").read_bytes()
     defaults = json.loads(default_bytes)
@@ -33,7 +33,7 @@ def main():
             continue
         if isinstance(defaults[key], (int, float)) and low <= defaults[key] <= high:
             ranges[key] = dict(min=low, max=high, step=step, source=control["source"])
-    schema = dict(engine="rapidraw", version=1, sourceCommit=catalog["commit"], sections=catalog["sections"], ranges=ranges)
+    schema = dict(engine="rapidraw", version=2, sourceCommit=catalog["commit"], sections=catalog["sections"], ranges=ranges)
     files = {
         ROOT / "app/src/main/assets/rapidraw/defaults.json": default_bytes,
         ROOT / "app/src/main/assets/rapidraw/schema.json": (json.dumps(schema, ensure_ascii=False, indent=2) + "\n").encode(),

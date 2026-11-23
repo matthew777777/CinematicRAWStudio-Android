@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """Verify the frozen upstream reference, independent of the installed app."""
+import argparse
 import hashlib
 import json
 from pathlib import Path
 
-root = Path(__file__).resolve().parents[1] / "third_party/rapidraw-reference"
+parser=argparse.ArgumentParser()
+parser.add_argument("--reference",default="third_party/rapidraw-1.7-reference")
+args=parser.parse_args()
+root = Path(__file__).resolve().parents[1] / args.reference
 manifest = json.loads((root / "manifest.json").read_text())
 failures = []
 for name, expected in manifest["sha256"].items():

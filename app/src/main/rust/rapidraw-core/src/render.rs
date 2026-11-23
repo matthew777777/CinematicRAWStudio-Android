@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// CRS source-buffer adapter. The compute graph itself is generated unchanged.
+// CRS source-buffer adapter for the generated compute renderer.
 use std::sync::{Arc, OnceLock};
 #[path="resources.rs"]
 mod resources;
-use crate::renderer::{GpuPipelines, GpuProcessor, RenderRequest};
+use crate::renderer::{GpuPipelines, GpuProcessor, GuidedTextures, RenderRequest};
 use crate::image_processing::AllAdjustments;
 
 #[derive(Clone)]
@@ -11,16 +11,15 @@ pub struct GpuContext {
     pub device: Arc<wgpu::Device>,
     pub queue: Arc<wgpu::Queue>,
     pub limits: wgpu::Limits,
+    pub(crate) compute: Arc<OnceLock<crate::rapid_compute::ComputePipelines>>,
     pub pipelines: Arc<OnceLock<Arc<GpuPipelines>>>,
 }
 pub struct GpuImageEntry {
     pub id: u64,
     pub texture: wgpu::Texture,
     pub texture_view: wgpu::TextureView,
-    pub gf_coeffs_view: wgpu::TextureView,
-    pub gf_structure_view: wgpu::TextureView,
-    pub haze_view: wgpu::TextureView,
-    pub airlight_view: wgpu::TextureView,
+    pub is_raw: u32,
+    pub guided: OnceLock<GuidedTextures>,
     pub width: u32,
     pub height: u32,
 }
@@ -59,7 +58,7 @@ impl RapidRenderer {
         let (device,queue)=pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label:Some("CRS RapidRAW compute"),required_limits:limits.clone(), ..Default::default()
         })).map_err(|e|e.to_string())?;
-        let context=GpuContext {device:Arc::new(device),queue:Arc::new(queue),limits,pipelines:Arc::new(OnceLock::new())};
+        let context=GpuContext {device:Arc::new(device),queue:Arc::new(queue),limits,compute:Arc::new(OnceLock::new()),pipelines:Arc::new(OnceLock::new())};
         let scope=context.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let processor=GpuProcessor::new(context.clone(),width,height)?;
         if let Some(error)=pollster::block_on(scope.pop()) {return Err(error.to_string());}
@@ -92,10 +91,8 @@ impl RapidRenderer {
             wgpu::TexelCopyBufferLayout{offset:0,bytes_per_row:Some(self.width*8),rows_per_image:Some(self.height)},
             wgpu::Extent3d{width:self.width,height:self.height,depth_or_array_layers:1});
         let view=texture.create_view(&Default::default());
-        let guided=self.processor.build_guided_coeffs(&view,self.width,self.height,is_raw);
         self.input=Some(GpuImageEntry{id:self.next_id,texture,texture_view:view,
-            gf_coeffs_view:guided.coeffs,gf_structure_view:guided.structure,haze_view:guided.haze,
-            airlight_view:guided.airlight,width:self.width,height:self.height});
+            is_raw,guided:OnceLock::new(),width:self.width,height:self.height});
         self.next_id=self.next_id.checked_add(1).ok_or("Source identity overflow")?;
         Ok(())
     }
@@ -166,9 +163,8 @@ fn main(@builtin(global_invocation_id) id:vec3<u32>) {
         let mut encoder=device.create_command_encoder(&Default::default());
         {let mut pass=encoder.begin_compute_pass(&Default::default());pass.set_pipeline(pipeline);pass.set_bind_group(0,&bindings,&[]);pass.dispatch_workgroups(self.width.div_ceil(8),self.height.div_ceil(8),1);}
         queue.submit(Some(encoder.finish()));
-        let guided=self.processor.build_guided_coeffs(&view,self.width,self.height,1);
-        self.input=Some(GpuImageEntry{id:self.next_id,texture:linear,texture_view:view,gf_coeffs_view:guided.coeffs,
-            gf_structure_view:guided.structure,haze_view:guided.haze,airlight_view:guided.airlight,width:self.width,height:self.height});
+        self.input=Some(GpuImageEntry{id:self.next_id,texture:linear,texture_view:view,
+            is_raw:1,guided:OnceLock::new(),width:self.width,height:self.height});
         self.camera_source=Some(camera);self.next_id=self.next_id.checked_add(1).ok_or("Source identity overflow")?;
         Ok(wb)
     }
