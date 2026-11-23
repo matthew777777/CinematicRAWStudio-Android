@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.matthew.crs.project
 
+import com.matthew.crs.PreviewScopes
+
 import com.matthew.crs.rapidraw.*
 
 import android.content.Intent
@@ -162,6 +164,7 @@ private fun SequenceEditor(s: ProjectSession, onBack: () -> Unit) {
                     Box(Modifier.weight(1f).fillMaxWidth().background(Color(0xFF070809)), contentAlignment = Alignment.Center) {
                         val bitmap = s.player.frame
                         if (bitmap != null) key(bitmap, s.player.index) { Image(bitmap.asImageBitmap(), "Sequence preview, frame ${s.player.index + 1}", Modifier.fillMaxSize().padding(4.dp), contentScale = ContentScale.Fit) }
+                        if (p.clips.isNotEmpty()) PreviewScopes { s.player.frame }
                         if (p.clips.isEmpty()) Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(Icons.Default.VideoLibrary, null, tint = MaterialTheme.colorScheme.primary)
                             Text("Add takes to start your sequence", Modifier.padding(12.dp))

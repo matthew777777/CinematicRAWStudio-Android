@@ -48,7 +48,7 @@ import java.util.UUID
         Checkbox(mask.optBoolean("invert",false),{replace(index,JSONObject(mask.toString()).put("invert",it))});Text("Invert")
         TextButton(onClick={replace(index,null);selected=0}) {Text("Delete")}
     }
-    RapidValueControl("Opacity",mask.optDouble("opacity",100.0),ParameterRange(0.0,100.0,1.0)) {replace(index,JSONObject(mask.toString()).put("opacity",it))}
+    RapidValueControl("Opacity",mask.optDouble("opacity",100.0),ParameterRange(0.0,100.0,1.0),100.0) {replace(index,JSONObject(mask.toString()).put("opacity",it))}
     val subs=mask.getJSONArray("subMasks")
     if(subs.length()>0) {
         val sub=subs.getJSONObject(0); val params=sub.getJSONObject("parameters")
